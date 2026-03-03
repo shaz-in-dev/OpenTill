@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next';
 
 interface Props {
   orderId: string
@@ -12,6 +13,8 @@ interface Props {
 }
 
 export default function ReceiptModal({ orderId, subtotal, discount, tip, total, paymentMethod, items, onClose }: Props) {
+  const { t } = useTranslation();
+  
   const handlePrint = () => {
     window.print()
   }
@@ -38,10 +41,10 @@ export default function ReceiptModal({ orderId, subtotal, discount, tip, total, 
         <div style={{ borderBottom: '1px dashed #000', margin: '15px 0' }}></div>
 
         <div style={{ textAlign: 'left', fontSize: '0.9rem' }}>
-          <p><strong>Order #:</strong> {orderId.slice(0, 8)}</p>
-          <p><strong>Date:</strong> {new Date().toLocaleDateString()}</p>
-          <p><strong>Time:</strong> {new Date().toLocaleTimeString()}</p>
-          <p><strong>Method:</strong> {paymentMethod}</p> 
+          <p><strong>{t('order_id')}:</strong> {orderId.slice(0, 8)}</p>
+          <p><strong>{t('date')}:</strong> {new Date().toLocaleDateString()}</p>
+          <p><strong>{t('time')}:</strong> {new Date().toLocaleTimeString()}</p>
+          <p><strong>{t('method')}:</strong> {paymentMethod}</p> 
         </div>
         <div style={{ borderBottom: '1px dashed #000', margin: '15px 0' }}></div>
 
@@ -57,13 +60,13 @@ export default function ReceiptModal({ orderId, subtotal, discount, tip, total, 
 
         {/* --- FINANCIAL BREAKDOWN --- */}
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
-          <span>Subtotal</span>
+          <span>{t('subtotal')}</span>
           <span>${(subtotal / 100).toFixed(2)}</span>
         </div>
 
         {discount > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
-            <span>Discount</span>
+            <span>{t('discount')}</span>
             <span>-${(discount / 100).toFixed(2)}</span>
           </div>
         )}
@@ -71,22 +74,22 @@ export default function ReceiptModal({ orderId, subtotal, discount, tip, total, 
         {/* SHOW TIP ONLY IF > 0 */}
         {tip > 0 && (
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
-            <span>Tip</span>
+            <span>{t('tip')}</span>
             <span>${(tip / 100).toFixed(2)}</span>
           </div>
         )}
 
         <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '1.2rem', marginTop: '10px' }}>
-          <span>TOTAL</span>
+          <span>{t('total').toUpperCase()}</span>
           <span>${(total / 100).toFixed(2)}</span>
         </div>
 
         <div style={{ borderBottom: '1px dashed #000', margin: '20px 0' }}></div>
-        <p style={{ fontSize: '0.8rem' }}>Thank you for your business!</p>
+        <p style={{ fontSize: '0.8rem' }}>{t('thank_you')}</p>
 
         <div className="no-print" style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '10px', background: '#eee', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>Close</button>
-          <button onClick={handlePrint} style={{ flex: 1, padding: '10px', background: 'black', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>Print</button>
+          <button onClick={onClose} style={{ flex: 1, padding: '10px', background: '#eee', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>{t('close')}</button>
+          <button onClick={handlePrint} style={{ flex: 1, padding: '10px', background: 'black', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>{t('print')}</button>
         </div>
 
       </div>

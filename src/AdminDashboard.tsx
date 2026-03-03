@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 import ReceiptModal from './components/ReceiptModal'
+import { useTranslation } from 'react-i18next'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 export default function AdminDashboard() {
+  const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState('inventory') 
   const [variants, setVariants] = useState<any[]>([])
   const [orders, setOrders] = useState<any[]>([]) 
@@ -13,12 +16,20 @@ export default function AdminDashboard() {
   const [diningMode, setDiningMode] = useState(false)
   const [kitchenMode, setKitchenMode] = useState(false) // New: KDS Toggle State
 
+  // NEW: Store Config
+  const [storeName, setStoreName] = useState('OpenTill Coffee')
+  const [storeAddress, setStoreAddress] = useState('123 Code Street')
+  const [taxRate, setTaxRate] = useState(10)
+  const [currency, setCurrency] = useState('$')
+
   // State for the Receipt Modal
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<any>(null)
 
   // FILTER & SEARCH STATES
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [orderSearch, setOrderSearch] = useState('');
+
+  const [salesData, setSalesData] = useState<any[]>([])
 
   // FORM STATES
   const [newName, setNewName] = useState('')
@@ -36,6 +47,7 @@ export default function AdminDashboard() {
     if (activeTab === 'inventory') fetchVariants()
     else if (activeTab === 'sales') fetchOrders()
     else if (activeTab === 'staff') fetchStaff()
+    else if (activeTab === 'analytics') fetchAnalytics()
   }, [activeTab])
 
   // --- DATA FETCHING ---
@@ -44,9 +56,69 @@ export default function AdminDashboard() {
     const { data: diningData } = await supabase.from('settings').select('*').eq('key', 'dining_mode').single()
     if (diningData) setDiningMode(diningData.value)
 
-    // Fetch Kitchen Display Mode
     const { data: kitchenData } = await supabase.from('settings').select('*').eq('key', 'kitchen_display_active').single()
     if (kitchenData) setKitchenMode(kitchenData.value)
+
+    const { data: storeData } = await supabase.from('settings').select('*').in('key', ['store_name', 'store_address', 'tax_rate', 'currency'])
+    
+    if (storeData) {
+      storeData.forEach(setting => {
+        if (setting.key === 'store_name') setStoreName(setting.value)
+        if (setting.key === 'store_address') setStoreAddress(setting.value)
+        if (setting.key === 'tax_rate') setTaxRate(Number(setting.value))
+        if (setting.key === 'currency') setCurrency(setting.value)
+      })
+    }
+  }
+
+  const fetchAnalytics = async () => {
+    // Determine start/end of today
+    const start = new Date()
+    start.setHours(0,0,0,0)
+    
+    // Fetch orders for today
+    const { data } = await supabase
+      .from('orders')
+      .select('*')
+      .gte('created_at', start.toISOString())
+    
+    if (data && data.length > 0) {
+      // Group by hour for chart
+      const hours = Array(24).fill(0).map((_, i) => ({ name: `${i}:00`, sales: 0 }))
+      
+      data.forEach(order => {
+        if (!order.created_at) return; 
+        const date = new Date(order.created_at);
+        if (isNaN(date.getTime())) return;
+        const hour = date.getHours()
+        hours[hour].sales += (order.total_amount || 0)
+      })
+      
+      setSalesData(hours.filter(h => h.sales > 0)) // Only show active hours
+    }
+  }
+
+  const saveSettings = async () => {
+    const updates = [
+      { key: 'store_name', value: storeName },
+      { key: 'store_address', value: storeAddress },
+      { key: 'tax_rate', value: taxRate },
+      { key: 'currency', value: currency },
+      { key: 'dining_mode', value: diningMode },
+      { key: 'kitchen_display_active', value: kitchenMode }
+    ]
+
+    for (const update of updates) {
+      // Upsert logic (if key exists, update value)
+      const { data: existing } = await supabase.from('settings').select('id').eq('key', update.key).single()
+      
+      if (existing) {
+        await supabase.from('settings').update({ value: update.value }).eq('id', existing.id)
+      } else {
+        await supabase.from('settings').insert(update)
+      }
+    }
+    alert(t('settings_saved'))
   }
 
   const fetchVariants = async () => {
@@ -87,37 +159,7 @@ export default function AdminDashboard() {
     setLoading(false)
   }
 
-  // --- ACTIONS ---
-  const handleToggleDiningMode = async (val: boolean) => {
-    setDiningMode(val)
-    const { error } = await supabase
-      .from('settings')
-      .update({ value: val })
-      .eq('key', 'dining_mode')
-    
-    if (error) {
-      alert("Failed to update setting: " + error.message)
-      setDiningMode(!val) // Revert UI if DB fails
-    } else {
-      alert(`Dining Mode ${val ? 'Enabled' : 'Disabled'}. Table selection will now be ${val ? 'required' : 'skipped'} on the Till.`)
-    }
-  }
 
-  // New: Toggle Kitchen Display System
-  const handleToggleKitchenMode = async (val: boolean) => {
-    setKitchenMode(val)
-    const { error } = await supabase
-      .from('settings')
-      .update({ value: val })
-      .eq('key', 'kitchen_display_active')
-    
-    if (error) {
-      alert("Failed to update kitchen setting: " + error.message)
-      setKitchenMode(!val)
-    } else {
-      alert(`Kitchen Display ${val ? 'Enabled' : 'Disabled'}. dedicated /kitchen route is now ${val ? 'active' : 'inactive'}.`)
-    }
-  }
 
   const handleVoidOrder = async (order: any) => {
     if (!confirm("Void this order? Revenue will be deducted and stock will be returned.")) return;
@@ -143,11 +185,16 @@ export default function AdminDashboard() {
 
   // --- ANALYTICS & SEARCH LOGIC ---
   const filteredOrders = orders.filter(o => {
-    const matchesDate = new Date(o.created_at).toISOString().split('T')[0] === selectedDate;
-    const shortId = o.id.split('-')[0].toUpperCase();
-    const matchesSearch = o.id.toLowerCase().includes(orderSearch.toLowerCase()) || 
-                          shortId.includes(orderSearch.toUpperCase()) ||
-                          o.order_items?.some((i: any) => i.product_name_snapshot.toLowerCase().includes(orderSearch.toLowerCase()));
+    const created = o.created_at ? new Date(o.created_at) : null;
+    if (!created || isNaN(created.getTime())) return false;
+    
+    const matchesDate = created.toISOString().split('T')[0] === selectedDate;
+    const shortId = (o.id || '').split('-')[0].toUpperCase();
+    const searchLower = orderSearch.toLowerCase();
+    
+    const matchesSearch = (o.id || '').toLowerCase().includes(searchLower) || 
+                          shortId.includes(searchLower.toUpperCase()) ||
+                          o.order_items?.some((i: any) => (i.product_name_snapshot || '').toLowerCase().includes(searchLower));
     return matchesDate && matchesSearch;
   });
 
@@ -160,7 +207,12 @@ export default function AdminDashboard() {
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split('T')[0];
     const dayTotal = orders
-      .filter(o => o.status !== 'VOIDED' && new Date(o.created_at).toISOString().split('T')[0] === dateStr)
+      .filter(o => {
+        if (!o.created_at) return false;
+        const created = new Date(o.created_at);
+        if (isNaN(created.getTime())) return false;
+        return o.status !== 'VOIDED' && created.toISOString().split('T')[0] === dateStr;
+      })
       .reduce((sum, o) => sum + (o.total_amount || 0), 0) / 100;
     return { date: dateStr, label: d.toLocaleDateString([], { weekday: 'short' }), total: dayTotal };
   }).reverse();
@@ -224,18 +276,19 @@ export default function AdminDashboard() {
       </div>
 
       {/* TABS */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '25px' }}>
-        {['inventory', 'sales', 'staff', 'settings'].map(tab => (
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '25px', overflowX: 'auto', paddingBottom: '10px' }}>
+        {['inventory', 'sales', 'analytics', 'staff', 'settings'].map(tab => (
           <button 
             key={tab} 
             onClick={() => setActiveTab(tab)} 
             style={{ 
               padding: '12px 24px', cursor: 'pointer', fontWeight: 'bold', border: 'none', borderRadius: '8px',
               background: activeTab === tab ? '#000' : '#eee', 
-              color: activeTab === tab ? '#fff' : '#000', transition: '0.2s'
+              color: activeTab === tab ? '#fff' : '#000', transition: '0.2s',
+              minWidth: '100px'
             }}
           >
-            {tab.toUpperCase()}
+            {t(tab).toUpperCase()}
           </button>
         ))}
       </div>
@@ -243,7 +296,7 @@ export default function AdminDashboard() {
       <div style={{ background: 'white', border: '1px solid #ddd', borderRadius: '12px', minHeight: '400px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
         
         {loading ? (
-          <div style={{ padding: '50px', textAlign: 'center' }}>Refreshing data...</div>
+          <div style={{ padding: '50px', textAlign: 'center' }}>{t('loading')}...</div>
         ) : activeTab === 'inventory' ? (
           <div style={{ padding: '20px' }}>
             <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', marginBottom: '25px', border: '1px solid #eee' }}>
@@ -278,14 +331,126 @@ export default function AdminDashboard() {
             </table>
           </div>
 
+        ) : activeTab === 'analytics' ? (
+          <div style={{ padding: '25px', height: '100%' }}>
+            <h2 style={{ marginTop: 0 }}>{t('analytics')}</h2>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px' }}>
+              <div style={{ padding: '20px', background: '#f8f9fa', borderRadius: '12px' }}>
+                <h3 style={{ margin: '0 0 10px 0', color: '#555' }}>{t('total_sales_today')}</h3>
+                <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#2e7d32' }}>
+                  {currency}{(salesData.reduce((sum, item) => sum + item.sales, 0) / 100).toFixed(2)}
+                </div>
+              </div>
+              <div style={{ padding: '20px', background: '#e3f2fd', borderRadius: '12px' }}>
+                <h3 style={{ margin: '0 0 10px 0', color: '#1565c0' }}>{t('top_selling_items')}</h3>
+                <div style={{ fontSize: '1.2rem', color: '#555' }}>Coming Soon...</div>
+              </div>
+            </div>
+
+            <div style={{ height: '300px', width: '100%' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={salesData.map(d => ({ ...d, sales: d.sales / 100 }))}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip formatter={(value) => `${currency}${value}`} />
+                  <Bar dataKey="sales" fill="#1565c0" name="Sales ($)" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+        ) : activeTab === 'settings' ? (
+          <div style={{ padding: '30px', maxWidth: '600px' }}>
+            <h2 style={{ marginTop: 0 }}>{t('settings')}</h2>
+            
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>{t('store_name')}</label>
+              <input 
+                value={storeName}
+                onChange={e => setStoreName(e.target.value)}
+                style={{ width: '100%', padding: '10px', fontSize: '1rem', border: '1px solid #ccc', borderRadius: '6px' }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>{t('store_address')}</label>
+              <input 
+                value={storeAddress}
+                onChange={e => setStoreAddress(e.target.value)}
+                style={{ width: '100%', padding: '10px', fontSize: '1rem', border: '1px solid #ccc', borderRadius: '6px' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '20px', marginBottom: '20px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>{t('tax_rate')}</label>
+                <input 
+                  type="number"
+                  value={taxRate}
+                  onChange={e => setTaxRate(Number(e.target.value))}
+                  style={{ width: '100%', padding: '10px', fontSize: '1rem', border: '1px solid #ccc', borderRadius: '6px' }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>{t('currency_symbol')}</label>
+                <select 
+                  value={currency}
+                  onChange={e => setCurrency(e.target.value)}
+                  style={{ width: '100%', padding: '10px', fontSize: '1rem', border: '1px solid #ccc', borderRadius: '6px' }}
+                >
+                  <option value="$">$ (USD)</option>
+                  <option value="€">€ (EUR)</option>
+                  <option value="£">£ (GBP)</option>
+                  <option value="¥">¥ (JPY)</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ background: '#f5f5f5', padding: '20px', borderRadius: '8px', marginBottom: '30px' }}>
+              <h3 style={{ marginTop: 0, fontSize: '1rem' }}>Feature Toggles</h3>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '15px' }}>
+                <input 
+                  type="checkbox" 
+                  id="diningMode" 
+                  checked={diningMode} 
+                  onChange={e => setDiningMode(e.target.checked)} 
+                  style={{ width: '20px', height: '20px', marginRight: '10px' }}
+                />
+                <label htmlFor="diningMode">Enable Tables & Dining Mode</label>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <input 
+                  type="checkbox" 
+                  id="kitchenMode" 
+                  checked={kitchenMode} 
+                  onChange={e => setKitchenMode(e.target.checked)} 
+                  style={{ width: '20px', height: '20px', marginRight: '10px' }}
+                />
+                <label htmlFor="kitchenMode">Enable Kitchen Display System (KDS)</label>
+              </div>
+            </div>
+
+            <button 
+              onClick={saveSettings}
+              style={{ 
+                width: '100%', padding: '15px', background: '#000', color: 'white', 
+                border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '1.1rem', cursor: 'pointer' 
+              }}
+            >
+              {t('save_settings')}
+            </button>
+          </div>
+        
         ) : activeTab === 'sales' ? (
           <div style={{ padding: '25px' }}>
             <div style={{ marginBottom: '30px', padding: '20px', background: '#fff', border: '1px solid #eee', borderRadius: '10px' }}>
-              <h3 style={{ margin: '0 0 20px 0', fontSize: '1rem' }}>Revenue Trends (Last 7 Days)</h3>
+              <h3 style={{ margin: '0 0 20px 0', fontSize: '1rem' }}>{t('revenue_trends')}</h3>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: '15px', height: '120px' }}>
                 {last7Days.map(day => (
                   <div key={day.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px' }}>
-                    <div style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>${day.total.toFixed(0)}</div>
+                    <div style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>{currency}{day.total.toFixed(0)}</div>
                     <div style={{ width: '100%', background: day.date === selectedDate ? '#2e7d32' : '#e0e0e0', height: `${(day.total / maxWeeklyTotal) * 100}px`, borderRadius: '3px 3px 0 0' }}></div>
                     <div style={{ fontSize: '0.65rem', color: '#666' }}>{day.label}</div>
                   </div>
@@ -295,23 +460,23 @@ export default function AdminDashboard() {
 
             <div style={{ display: 'flex', gap: '15px', marginBottom: '25px', alignItems: 'flex-end' }}>
                <div style={{ flex: 1 }}>
-                  <label style={labelStyle}>Search History</label>
-                  <input placeholder="Search #ID or Product..." value={orderSearch} onChange={e => setOrderSearch(e.target.value)} style={{ ...inputStyle, width: '100%', border: '2px solid #eee' }} />
+                  <label style={labelStyle}>{t('search_orders')}</label>
+                  <input placeholder={t('search_placeholder')} value={orderSearch} onChange={e => setOrderSearch(e.target.value)} style={{ ...inputStyle, width: '100%', border: '2px solid #eee' }} />
                </div>
                <div>
-                  <label style={labelStyle}>Date</label>
+                  <label style={labelStyle}>{t('date')}</label>
                   <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} style={inputStyle} />
                </div>
                <div style={{ textAlign: 'right', background: '#e8f5e9', padding: '10px 20px', borderRadius: '8px', border: '1px solid #c8e6c9', minWidth: '150px' }}>
-                  <small style={{ color: '#2e7d32', fontWeight: 'bold' }}>{filteredOrders.length} ORDERS</small>
-                  <h2 style={{ margin: 0, color: '#1b5e20' }}>${dailyTotal.toFixed(2)}</h2>
+                  <small style={{ color: '#2e7d32', fontWeight: 'bold' }}>{filteredOrders.length} {t('orders').toUpperCase()}</small>
+                  <h2 style={{ margin: 0, color: '#1b5e20' }}>{currency}{dailyTotal.toFixed(2)}</h2>
                </div>
             </div>
 
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ textAlign: 'left', background: '#fafafa', borderBottom: '2px solid #eee' }}>
-                  <th style={thStyle}>Order ID</th><th style={thStyle}>Items Sold</th><th style={thStyle}>Total</th><th style={thStyle}>Actions</th>
+                  <th style={thStyle}>{t('order_id')}</th><th style={thStyle}>{t('items')}</th><th style={thStyle}>{t('total')}</th><th style={thStyle}>{t('actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -320,18 +485,18 @@ export default function AdminDashboard() {
                     <td style={tdStyle}>
                       <div style={{ fontWeight: 'bold', color: '#1a73e8', fontSize: '0.8rem' }}>#{sale.id.split('-')[0].toUpperCase()}</div>
                       <div style={{ color: '#999', fontSize: '0.75rem' }}>{new Date(sale.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                      {sale.status === 'VOIDED' && <div style={{color:'red', fontSize:'0.7rem', fontWeight:'bold'}}>VOIDED</div>}
+                      {sale.status === 'VOIDED' && <div style={{color:'red', fontSize:'0.7rem', fontWeight:'bold'}}>{t('voided')}</div>}
                     </td>
                     <td style={tdStyle}>
                       {sale.order_items?.map((item: any, i: number) => (
                         <div key={i} style={{ fontSize: '0.9rem' }}>{item.quantity}x {item.product_name_snapshot}</div>
                       ))}
                     </td>
-                    <td style={{ ...tdStyle, fontWeight: 'bold' }}>${((sale.total_amount || 0) / 100).toFixed(2)}</td>
+                    <td style={{ ...tdStyle, fontWeight: 'bold' }}>{currency}{((sale.total_amount || 0) / 100).toFixed(2)}</td>
                     <td style={tdStyle}>
                       <div style={{display:'flex', gap: '8px'}}>
-                        <button onClick={() => setSelectedReceiptOrder(sale)} style={btnStyle}>Print</button>
-                        {sale.status !== 'VOIDED' && <button onClick={() => handleVoidOrder(sale)} style={{...btnStyle, color: 'red'}}>Void</button>}
+                        <button onClick={() => setSelectedReceiptOrder(sale)} style={btnStyle}>{t('print_receipt')}</button>
+                        {sale.status !== 'VOIDED' && <button onClick={() => handleVoidOrder(sale)} style={{...btnStyle, color: 'red'}}>{t('void_order')}</button>}
                       </div>
                     </td>
                   </tr>
@@ -343,91 +508,27 @@ export default function AdminDashboard() {
         ) : activeTab === 'staff' ? (
           <div style={{ padding: '20px' }}>
             <div style={{ background: '#f9f9f9', padding: '20px', borderRadius: '8px', marginBottom: '25px', border: '1px solid #eee' }}>
-              <h3>Staff Directory</h3>
+              <h3 style={{ marginTop: 0 }}>{t('staff_directory')}</h3>
               <form onSubmit={handleCreateUser} style={{ display: 'flex', gap: '10px' }}>
-                <input placeholder="Email" value={newEmail} onChange={e => setNewEmail(e.target.value)} style={inputStyle} />
-                <input type="password" placeholder="Password" value={newPassword} onChange={e => setNewPassword(e.target.value)} style={inputStyle} />
-                <button type="submit" style={{ padding: '10px 20px', background: 'black', color: 'white', borderRadius: '4px', cursor: 'pointer' }}>Create Account</button>
+                <input placeholder={t('email')} value={newEmail} onChange={e => setNewEmail(e.target.value)} style={inputStyle} />
+                <input type="password" placeholder={t('password')} value={newPassword} onChange={e => setNewPassword(e.target.value)} style={inputStyle} />
+                <select value={newRole} onChange={e => setNewRole(e.target.value)} style={inputStyle}>
+                  <option value="cashier">{t('cashier')}</option>
+                  <option value="admin">{t('admin')}</option>
+                  <option value="kitchen">{t('kitchen')}</option>
+                </select>
+                <button type="submit" style={{ padding: '10px 20px', background: 'black', color: 'white', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{t('create_account')}</button>
               </form>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr style={{ textAlign: 'left', background: '#fafafa' }}><th style={thStyle}>Email</th><th style={thStyle}>Role</th></tr></thead>
+              <thead><tr style={{ textAlign: 'left', background: '#fafafa' }}><th style={thStyle}>{t('email')}</th><th style={thStyle}>{t('role')}</th></tr></thead>
               <tbody>{staff.map(s => <tr key={s.id} style={{ borderBottom: '1px solid #eee' }}><td style={tdStyle}>{s.email}</td><td style={tdStyle}>{s.role.toUpperCase()}</td></tr>)}</tbody>
             </table>
           </div>
 
-        ) : (
-          /* SETTINGS TAB */
-          <div style={{ padding: '40px' }}>
-            <h2 style={{ marginTop: 0 }}>System Settings</h2>
-            <p style={{ color: '#666', marginBottom: '30px' }}>Configure global features for the POS system.</p>
-            
-            <div style={{ 
-              background: '#f9f9f9', 
-              padding: '30px', 
-              borderRadius: '12px', 
-              border: '1px solid #eee',
-              display: 'flex',
-              flexDirection: 'column', // Modified to stack settings
-              gap: '20px'
-            }}>
-              {/* Dining Mode Toggle */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h4 style={{ margin: '0 0 5px 0', fontSize: '1.1rem' }}>Dining Mode (Table Management)</h4>
-                  <p style={{ margin: 0, color: '#777', fontSize: '0.9rem' }}>
-                    When enabled, cashiers will be prompted to select a table before starting an order.
-                  </p>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <span style={{ fontWeight: 'bold', color: diningMode ? '#2e7d32' : '#c62828' }}>
-                    {diningMode ? 'ACTIVE' : 'INACTIVE'}
-                  </span>
-                  <input 
-                    type="checkbox" 
-                    checked={diningMode} 
-                    onChange={(e) => handleToggleDiningMode(e.target.checked)}
-                    style={{ width: '25px', height: '25px', cursor: 'pointer' }}
-                  />
-                </div>
-              </div>
-
-              {/* Kitchen Display System Toggle */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #eee', paddingTop: '20px' }}>
-                <div>
-                  <h4 style={{ margin: '0 0 5px 0', fontSize: '1.1rem' }}>Kitchen Display System (KDS)</h4>
-                  <p style={{ margin: 0, color: '#777', fontSize: '0.9rem' }}>
-                    Enable a dedicated view for kitchen staff to monitor incoming orders.
-                  </p>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <span style={{ fontWeight: 'bold', color: kitchenMode ? '#2e7d32' : '#c62828' }}>
-                    {kitchenMode ? 'ACTIVE' : 'INACTIVE'}
-                  </span>
-                  <input 
-                    type="checkbox" 
-                    checked={kitchenMode} 
-                    onChange={(e) => handleToggleKitchenMode(e.target.checked)}
-                    style={{ width: '25px', height: '25px', cursor: 'pointer' }}
-                  />
-                </div>
-              </div>
-              
-              {kitchenMode && (
-                <div style={{ marginTop: '10px', background: '#e3f2fd', padding: '15px', borderRadius: '8px', border: '1px solid #bbdefb' }}>
-                  <a href="/kitchen" target="_blank" style={{ color: '#1565c0', fontWeight: 'bold', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    🖥️ Open Kitchen Display Screen ↗
-                  </a>
-                </div>
-              )}
-            </div>
-            
-            <div style={{ marginTop: '40px', padding: '20px', background: '#fff9c4', borderRadius: '8px', border: '1px solid #fff176', fontSize: '0.85rem', color: '#827717' }}>
-              <strong>Note:</strong> Settings changed here take effect across all POS terminals immediately.
-            </div>
-          </div>
-        )}
+        ) : null}
       </div>
+
 
       {/* RECEIPT MODAL INTEGRATION */}
       {selectedReceiptOrder && (

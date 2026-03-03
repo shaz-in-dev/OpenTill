@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next'; // NEW: i18n
+import { Globe, ShoppingCart, User, X, ShoppingBag } from 'lucide-react'; // NEW: Icons for versatility
 import { supabase } from './supabaseClient';
 import ProductGrid from './components/ProductGrid';
 import CartSidebar from './components/CartSidebar';
@@ -16,6 +18,8 @@ export interface CartItem {
 }
 
 export default function Root() {
+  const { t, i18n } = useTranslation(); // Hook for translations
+
   // --- State Management ---
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showPayment, setShowPayment] = useState(false);
@@ -309,46 +313,135 @@ export default function Root() {
 
   // --- Conditional Rendering for Dining Mode ---
   if (diningModeActive && !selectedTable) {
-    return <TableSelection onSelect={(table) => setSelectedTable(table)} />;
+    return <TableSelection onSelect={(table) => setSelectedTable(table)} setDiningMode={setDiningModeActive} />;
   }
 
   return (
-    <div className="content-wrapper">
-      <div className="main-section">
-        {/* Table Serving Header - Now supports switching without data loss */}
-        {selectedTable && (
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center', 
-            marginBottom: '20px', 
-            padding: '15px', 
-            background: '#fff', 
-            borderRadius: '8px', 
-            border: '1px solid #ddd' 
-          }}>
-            <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>📍 Serving: {selectedTable}</span>
+    <div className="app-container">
+      {/* --- NEW: Global Header --- */}
+      <header className="app-header" style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '0 20px',
+        height: '60px',
+        background: '#1a1a1a', // Dark header
+        color: '#fff',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <ShoppingBag size={24} />
+          <h1 style={{ margin: 0, fontSize: '1.2rem' }}>OpenTill POS</h1>
+          
+          <div style={{ display: 'flex', gap: '5px', background: '#333', padding: '4px', borderRadius: '6px', marginLeft: '20px' }}>
             <button 
-              onClick={() => setSelectedTable(null)} 
-              style={{ padding: '8px 15px', background: '#eee', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+              onClick={() => setDiningModeActive(false)}
+              style={{
+                background: !diningModeActive ? '#4caf50' : 'transparent',
+                color: !diningModeActive ? 'white' : '#aaa',
+                border: 'none',
+                padding: '6px 12px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                transition: 'all 0.2s'
+              }}
             >
-              Switch Table
+              🚀 {t('quick_service')}
+            </button>
+            <button 
+              onClick={() => setDiningModeActive(true)}
+              style={{
+                background: diningModeActive ? '#ff9800' : 'transparent',
+                color: diningModeActive ? 'white' : '#aaa',
+                border: 'none',
+                padding: '6px 12px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                transition: 'all 0.2s'
+              }}
+            >
+              🍽️ {t('dining_mode')}
             </button>
           </div>
-        )}
+        </div>
 
-        <ProductGrid key={refreshKey} onAddToCart={addToCart} />
-      </div>
+        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+           {/* Language Switcher */}
+           <button 
+            onClick={() => i18n.changeLanguage(i18n.language === 'en' ? 'es' : 'en')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'transparent',
+              border: '1px solid #555',
+              padding: '6px 12px',
+              color: 'white',
+              borderRadius: '6px',
+              cursor: 'pointer'
+            }}
+          >
+            <Globe size={16} />
+            {i18n.language.toUpperCase()}
+          </button>
+        </div>
+      </header>
 
-      <div className="sidebar-section">
-        <CartSidebar
-          cartItems={cart}
-          onCheckout={handleInitiateCheckout}
-          onRemoveFromCart={removeFromCart}
-          discountPercentage={discountPercentage}
-          onSetDiscount={setDiscountPercentage}
-          onSendToKitchen={handleSendToKitchen} //
-        />
+      <div className="content-wrapper">
+        <div className="main-section">
+          {/* Table Serving Header - Now supports switching without data loss */}
+          {selectedTable && diningModeActive && (
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              marginBottom: '20px', 
+              padding: '15px', 
+              background: '#e3f2fd', 
+              borderRadius: '8px', 
+              border: '1px solid #90caf9',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+            }}>
+              <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#1565c0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                📍 {t('table')}: {selectedTable}
+              </span>
+              <button 
+                onClick={() => setSelectedTable(null)} 
+                style={{ 
+                  padding: '8px 15px', 
+                  background: 'white', 
+                  border: '1px solid #1565c0', 
+                  color: '#1565c0',
+                  borderRadius: '6px', 
+                  fontWeight: 'bold', 
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                🔄 {t('select_table')}
+              </button>
+            </div>
+          )}
+
+          <ProductGrid key={refreshKey} onAddToCart={addToCart} />
+        </div>
+
+        <div className="sidebar-section">
+          <CartSidebar
+            cartItems={cart}
+            onCheckout={handleInitiateCheckout}
+            onRemoveFromCart={removeFromCart}
+            discountPercentage={discountPercentage}
+            onSetDiscount={setDiscountPercentage}
+            onSendToKitchen={handleSendToKitchen} 
+            isDiningMode={diningModeActive} // Pass dining mode to sidebar
+            t={t} // Pass translate function
+          />
+        </div>
       </div>
 
       {showPayment && (

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
+import { useTranslation } from 'react-i18next'; // NEW: i18n support
 
 interface Variant {
   id: string
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export default function ProductGrid({ onAddToCart }: Props) {
+  const { t } = useTranslation(); // Hook
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   
@@ -63,7 +65,7 @@ export default function ProductGrid({ onAddToCart }: Props) {
     return matchesCategory && matchesSearch
   })
 
-  if (loading) return <div style={{ padding: '20px', textAlign: 'center' }}>Loading menu...</div>
+  if (loading) return <div style={{ padding: '20px', textAlign: 'center' }}>{t('loading_product')}</div>
 
   return (
     <div style={{ padding: '20px', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
@@ -72,7 +74,7 @@ export default function ProductGrid({ onAddToCart }: Props) {
       <div style={{ marginBottom: '20px' }}>
         <input 
           type="text"
-          placeholder="🔍 Search products..."
+          placeholder={t('search_placeholder')}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           style={{
@@ -101,7 +103,7 @@ export default function ProductGrid({ onAddToCart }: Props) {
                 transition: '0.2s'
               }}
             >
-              {cat}
+              {cat === "All" ? t('all') : cat === "Uncategorized" ? t('uncategorized') : cat}
             </button>
           ))}
         </div>

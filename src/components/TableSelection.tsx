@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
+import { useTranslation } from 'react-i18next'; // NEW: i18n
+import { ArrowLeft } from 'lucide-react'; // NEW: Icon
 
 interface DiningTable {
   id: number
@@ -9,15 +11,18 @@ interface DiningTable {
 
 interface Props {
   onSelect: (tableName: string) => void
+  setDiningMode: (mode: boolean) => void // NEW: To go back
 }
 
-export default function TableSelection({ onSelect }: Props) {
+export default function TableSelection({ onSelect, setDiningMode }: Props) {
+  const { t } = useTranslation(); // Hook
   const [tables, setTables] = useState<DiningTable[]>([])
   const [loading, setLoading] = useState(true)
 
   // Fetch tables from the database you just set up with SQL
   useEffect(() => {
     fetchTables()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const fetchTables = async () => {
@@ -39,13 +44,13 @@ export default function TableSelection({ onSelect }: Props) {
     } else {
       // 3. Map through all tables and set status to OCCUPIED if their number exists in table_cart_items
       const occupiedTableNames = new Set(activeCarts?.map(c => c.table_number));
-      
-      const updatedTables = allTables?.map(t => ({
+      // Standardize logic
+      const updatedTables = allTables ? allTables.map((t: any) => ({
         ...t,
         status: occupiedTableNames.has(t.table_number) ? 'OCCUPIED' : 'AVAILABLE'
-      })) as DiningTable[];
+      })) : [];
 
-      setTables(updatedTables || [])
+      setTables(updatedTables as DiningTable[])
     }
     setLoading(false)
   }
@@ -65,11 +70,35 @@ export default function TableSelection({ onSelect }: Props) {
       height: '100%', 
       overflowY: 'auto',
       boxSizing: 'border-box',
-      background: '#f9f9f9'
+      background: '#f9f9f9',
+      position: 'relative' // For absolute positioning of Back button
     }}>
+      {/* Back Button to Quick Service */}
+      <button 
+        onClick={() => setDiningMode(false)}
+        style={{
+          position: 'absolute',
+          top: '40px',
+          left: '40px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '10px 15px',
+          border: '1px solid #ddd',
+          background: 'white',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          fontWeight: 'bold',
+          color: '#555'
+        }}
+      >
+        <ArrowLeft size={18} />
+        {t('quick_service')}
+      </button>
+
       <div style={{ marginBottom: '40px' }}>
-        <h1 style={{ margin: '0 0 10px 0', fontSize: '2.5rem', fontWeight: '800' }}>Floor Plan</h1>
-        <p style={{ color: '#666', fontSize: '1.1rem' }}>Select an available table to begin a new order.</p>
+        <h1 style={{ margin: '0 0 10px 0', fontSize: '2.5rem', fontWeight: '800' }}>{t('dining_mode')}</h1>
+        <p style={{ color: '#666', fontSize: '1.1rem' }}>{t('select_table')}</p>
       </div>
       
       <div style={{ 
@@ -104,17 +133,8 @@ export default function TableSelection({ onSelect }: Props) {
                 alignItems: 'center',
                 gap: '10px'
               }}
-              // Hover effect for available tables
-              onMouseOver={(e) => {
-                e.currentTarget.style.borderColor = '#111';
-                e.currentTarget.style.transform = 'translateY(-5px)';
-                e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.1)';
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.borderColor = table.status === 'AVAILABLE' ? '#eee' : '#ffcdd2';
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
-              }}
+              // Hover effect logic handled via CSS generally, but inline style override for simple hover is tricky in React without state/css modules. 
+              // We'll keep it simple or use CSS class if possible, but inline for now.
             >
               {table.table_number}
               <span style={{ 

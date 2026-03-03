@@ -5,6 +5,7 @@ import Root from './Root'
 import AdminDashboard from './AdminDashboard'
 import Login from './components/Login'
 import KitchenDisplay from './components/KitchenDisplay' // New: KDS Screen
+import './i18n'; // Import i18n configuration
 import './App.css'
 
 function App() {

@@ -1,4 +1,5 @@
 import { CartItem } from '../Root'
+import { TFunction } from 'i18next'; // Type for translation function
 
 interface Props {
   cartItems: CartItem[]
@@ -7,6 +8,8 @@ interface Props {
   discountPercentage: number
   onSetDiscount: (val: number) => void
   onSendToKitchen: () => void // New prop for kitchen routing
+  isDiningMode: boolean; // NEW: To toggle Kitchen UI
+  t: TFunction; // NEW: i18n
 }
 
 export default function CartSidebar({ 
@@ -15,7 +18,9 @@ export default function CartSidebar({
   onRemoveFromCart, 
   discountPercentage, 
   onSetDiscount,
-  onSendToKitchen //
+  onSendToKitchen,
+  isDiningMode,
+  t
 }: Props) {
   
   // Calculate Math
@@ -30,14 +35,14 @@ export default function CartSidebar({
     <div className="sidebar-section">
       {/* --- HEADER (Fixed) --- */}
       <div className="sidebar-header">
-        <h2 style={{ marginTop: 0, fontSize: '1.5rem' }}>Current Order</h2>
+        <h2 style={{ marginTop: 0, fontSize: '1.5rem' }}>{t('cart')}</h2>
       </div>
       
       {/* --- CART ITEMS LIST (Scrollable Middle Container) --- */}
       <div className="order-items-container">
         {cartItems.length === 0 ? (
           <p style={{ color: '#888', fontStyle: 'italic', marginTop: '20px' }}>
-            No items added yet.
+            {t('empty_cart')}
           </p>
         ) : (
           cartItems.map(item => (
@@ -92,8 +97,8 @@ export default function CartSidebar({
       {/* --- BOTTOM SECTION (Fixed at bottom) --- */}
       <div className="order-summary-footer">
         
-        {/* NEW: Kitchen Action Button */}
-        {cartItems.length > 0 && (
+        {/* NEW: Kitchen Action Button - Only in Dining Mode */}
+        {isDiningMode && cartItems.length > 0 && (
           <button 
             onClick={onSendToKitchen}
             disabled={!hasNewItems}
@@ -110,7 +115,7 @@ export default function CartSidebar({
               transition: '0.2s'
             }}
           >
-            🍳 {hasNewItems ? 'Send New Items to Kitchen' : 'All Items Sent to Kitchen'}
+            🍳 {hasNewItems ? t('send_kitchen') : t('kitchen_updated')}
           </button>
         )}
 
@@ -123,7 +128,7 @@ export default function CartSidebar({
             textTransform: 'uppercase', 
             marginBottom: '8px' 
           }}>
-            Discount
+            {t('discount')}
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
             {[0, 10, 20, 50].map(pct => (
@@ -151,12 +156,12 @@ export default function CartSidebar({
         {/* Math Summary */}
         <div style={{ marginBottom: '20px', fontSize: '0.95rem', color: '#666' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-            <span>Subtotal</span>
+            <span>{t('subtotal')}</span>
             <span>${(subtotal / 100).toFixed(2)}</span>
           </div>
           {discountPercentage > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#e53935' }}>
-              <span>Discount ({discountPercentage}%)</span>
+              <span>{t('discount')} ({discountPercentage}%)</span>
               <span>-${(discountAmount / 100).toFixed(2)}</span>
             </div>
           )}
@@ -179,7 +184,7 @@ export default function CartSidebar({
               textTransform: 'uppercase', 
               fontWeight: 'bold' 
             }}>
-              Total
+              {t('total')}
             </div>
             <div style={{ fontSize: '2.2rem', fontWeight: '800', lineHeight: '1' }}>
               ${(finalTotal / 100).toFixed(2)}
@@ -199,7 +204,7 @@ export default function CartSidebar({
               gap: '8px' 
             }}
           >
-            Pay Now ➔
+            {t('pay_now')} ➔
           </button>
         </div>
       </div>

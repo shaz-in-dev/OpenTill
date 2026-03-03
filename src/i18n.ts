@@ -1,0 +1,138 @@
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+
+// Translations
+const resources = {
+  en: {
+    translation: {
+      "welcome": "Welcome to OpenTill",
+      "cart": "Current Order",
+      "total": "Total",
+      "subtotal": "Subtotal",
+      "discount": "Discount",
+      "tip": "Tip",
+      "pay_now": "Pay Now",
+      "add_item": "Add Item",
+      "table": "Table",
+      "select_table": "Select Table",
+      "dining_mode": "Dining Mode",
+      "quick_service": "Quick Service",
+      "send_kitchen": "Send to Kitchen",
+      "kitchen_updated": "Kitchen order updated!",
+      "transaction_failed": "Transaction Failed!",
+      "stock_warning": "Sorry, only {{count}} left in stock!",
+      "empty_cart": "Cart is empty!",
+      "payment_method": "Payment Method",
+      "cash": "Cash",
+      "card": "Card",
+      "receipt": "Receipt",
+      "switch_language": "Switch Language (ES)",
+      "loading_product": "Loading menu...",
+      "search_placeholder": "🔍 Search products...",
+      "all": "All",
+      "uncategorized": "Uncategorized",
+      "finalize_payment": "Finalize Payment",
+      "bill_amount": "Bill Amount",
+      "add_gratuity": "Add Gratuity (Tip)",
+      "no_tip": "No Tip",
+      "custom_amount": "Custom Amount",
+      "cancel": "Cancel",
+      "close": "Close",
+      "print": "Print",
+      "thank_you": "Thank you for your business!",
+      "order_id": "Order #",
+      "date": "Date",
+      "time": "Time",
+      "method": "Method",
+      "admin_dashboard": "Admin Dashboard",
+      "inventory": "Inventory",
+      "sales": "Sales",
+      "staff": "Staff",
+      "settings": "Settings",
+      "analytics": "Analytics",
+      "store_name": "Store Name",
+      "store_address": "Address",
+      "tax_rate": "Tax Rate (%)",
+      "currency_symbol": "Currency",
+      "receipt_footer": "Receipt Footer",
+      "save_settings": "Save Settings",
+      "settings_saved": "Settings saved successfully!",
+      "total_sales_today": "Total Sales Today",
+      "top_selling_items": "Top Selling Items"
+    }
+  },
+  es: {
+    translation: {
+      "welcome": "Bienvenido a OpenTill",
+      "cart": "Orden Actual",
+      "total": "Total",
+      "subtotal": "Subtotal",
+      "discount": "Descuento",
+      "tip": "Propina",
+      "pay_now": "Pagar Ahora",
+      "add_item": "Añadir",
+      "table": "Mesa",
+      "select_table": "Seleccionar Mesa",
+      "dining_mode": "Modo Comedor",
+      "quick_service": "Servicio Rápido",
+      "send_kitchen": "Enviar a Cocina",
+      "kitchen_updated": "¡Orden de cocina actualizada!",
+      "transaction_failed": "¡Transacción Fallida!",
+      "stock_warning": "Lo siento, ¡solo quedan {{count}} en inventario!",
+      "empty_cart": "¡El carrito está vacío!",
+      "payment_method": "Método de Pago",
+      "cash": "Efectivo",
+      "card": "Tarjeta",
+      "receipt": "Recibo",
+      "switch_language": "Cambiar Idioma (EN)",
+      "loading_product": "Cargando menú...",
+      "search_placeholder": "🔍 Buscar productos...",
+      "all": "Todos",
+      "uncategorized": "Sin Categoría",
+      "finalize_payment": "Finalizar Pago",
+      "bill_amount": "Monto de Factura",
+      "add_gratuity": "Agregar Propina",
+      "no_tip": "Sin Propina",
+      "custom_amount": "Monto Personalizado",
+      "cancel": "Cancelar",
+      "close": "Cerrar",
+      "print": "Imprimir",
+      "thank_you": "¡Gracias por su compra!",
+      "order_id": "Orden #",
+      "date": "Fecha",
+      "time": "Hora",
+      "method": "Método",
+      "admin_dashboard": "Panel de Administración",
+      "inventory": "Inventario",
+      "sales": "Ventas",
+      "staff": "Personal",
+      "settings": "Configuración",
+      "analytics": "Análisis",
+      "store_name": "Nombre de Tienda",
+      "store_address": "Dirección",
+      "tax_rate": "Tasa de Impuesto (%)",
+      "currency_symbol": "Símbolo de Moneda",
+      "receipt_footer": "Mensaje de Recibo",
+      "save_settings": "Guardar Configuración",
+      "settings_saved": "¡Configuración guardada!",
+      "total_sales_today": "Ventas Totales Hoy",
+      "top_selling_items": "Más Vendidos"
+    }
+  }
+};
+
+i18n
+  .use(initReactI18next)
+  .init({
+    resources,
+    lng: "en", // default language
+    fallbackLng: "en",
+    interpolation: {
+      escapeValue: false 
+    },
+    react: { 
+      useSuspense: false // Disable Suspense to prevent white screen if boundary missing
+    }
+  });
+
+export default i18n;
