@@ -1,18 +1,22 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 import ReceiptModal from './components/ReceiptModal'
+import InventoryManager from './components/InventoryManager'
+import ModifierManager from './components/ModifierManager'
 import { useTranslation } from 'react-i18next'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 export default function AdminDashboard() {
   const { t } = useTranslation()
-  const [activeTab, setActiveTab] = useState('inventory') 
+  const [activeTab, setActiveTab] = useState('products') 
   const [variants, setVariants] = useState<any[]>([])
   const [orders, setOrders] = useState<any[]>([]) 
   const [staff, setStaff] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   
   // NEW: Settings State
+  const [selectedProductForMods, setSelectedProductForMods] = useState<{id: string, name: string} | null>(null);
+  
   const [diningMode, setDiningMode] = useState(false)
   const [kitchenMode, setKitchenMode] = useState(false) // New: KDS Toggle State
 
@@ -53,7 +57,7 @@ export default function AdminDashboard() {
     // Initial fetch for settings
     fetchSettings()
 
-    if (activeTab === 'inventory') fetchVariants()
+    if (activeTab === 'products') fetchVariants()
     else if (activeTab === 'sales') fetchOrders()
     else if (activeTab === 'staff') fetchStaff()
     else if (activeTab === 'analytics') fetchAnalytics()
@@ -333,7 +337,7 @@ export default function AdminDashboard() {
 
       {/* TABS */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '25px', overflowX: 'auto', paddingBottom: '10px' }}>
-        {['inventory', 'sales', 'analytics', 'bookings', 'staff', 'settings'].map(tab => (
+        {['products', 'stock', 'sales', 'analytics', 'bookings', 'staff', 'settings'].map(tab => (
           <button 
             key={tab} 
             onClick={() => setActiveTab(tab)} 
@@ -353,7 +357,7 @@ export default function AdminDashboard() {
         
         {loading ? (
           <div style={{ padding: '50px', textAlign: 'center' }}>{t('loading')}...</div>
-        ) : activeTab === 'inventory' ? (
+        ) : activeTab === 'products' ? (
           <div style={{ padding: '20px' }}>
             <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', marginBottom: '25px', border: '1px solid #eee' }}>
               <form onSubmit={handleCreateProduct} style={{ display: 'flex', gap: '15px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -372,7 +376,10 @@ export default function AdminDashboard() {
               <tbody>
                 {variants.map(v => (
                   <tr key={v.id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={tdStyle}><strong>{v.products?.name}</strong> ({v.name})</td>
+                    <td style={tdStyle}>
+                        <strong>{v.products?.name}</strong> ({v.name})
+                        <button onClick={() => setSelectedProductForMods({id: v.product_id, name: v.products?.name})} style={{ marginLeft: '10px', padding: '2px 5px', fontSize: '0.8rem', cursor: 'pointer', background: '#eaeaea', border: '1px solid #ccc', borderRadius: '4px' }}>⚙️ Modifiers</button>
+                    </td>
                     <td style={tdStyle}>
                       <input type="number" step="0.01" value={(v.price / 100).toFixed(2)} onChange={(e) => updateVariantField(v.id, 'price', Math.round(parseFloat(e.target.value) * 100))} style={editInput} />
                     </td>
@@ -387,6 +394,8 @@ export default function AdminDashboard() {
             </table>
           </div>
 
+        ) : activeTab === 'stock' ? (
+          <InventoryManager />
         ) : activeTab === 'analytics' ? (
           <div style={{ padding: '25px', height: '100%' }}>
             <h2 style={{ marginTop: 0 }}>{t('analytics')}</h2>

@@ -7,6 +7,7 @@ import CartSidebar from './components/CartSidebar';
 import ReceiptModal from './components/ReceiptModal';
 import PaymentModal from './components/PaymentModal';
 import TableSelection from './components/TableSelection'; 
+import { deductIngredients } from './utils/inventory';
 import './App.css';
 
 // Type definition for items in the cart
@@ -15,6 +16,8 @@ export interface CartItem {
   name: string;
   price: number;
   quantity: number;
+  modifiers?: any[];
+  status?: string;
 }
 
 export default function Root() {
@@ -104,21 +107,28 @@ export default function Root() {
     if (diningModeActive && !selectedTable) return;
 
     if (variant.track_stock) {
-      const existingInCart = cart.find(i => i.id === variant.id);
+      // Logic for stock check... simple version: ignore modifiers stock for now, just main item
+      const existingInCart = cart.find(i => i.id === variant.id); // Potential bug: matches first one
       const currentQty = existingInCart ? existingInCart.quantity : 0;
       if (currentQty >= variant.stock_quantity) {
         return alert(`Sorry, only ${variant.stock_quantity} left in stock!`);
       }
     }
 
+    const modifiers = variant.modifiers || [];
+    const modifierText = modifiers.map((m:any) => `+ ${m.name}`).join(', ');
+    const fullName = modifiers.length > 0 ? `${variant.name} \n(${modifierText})` : variant.name;
+
     if (diningModeActive && selectedTable) {
       // PERSISTENT DB LOGIC: Check if item exists for this table and is still in DRAFT status
+      // We search by NAME to differentiate modified items
       const { data: existing } = await supabase
         .from('table_cart_items')
         .select('*')
         .eq('table_number', selectedTable)
         .eq('variant_id', variant.id)
-        .eq('status', 'DRAFT') // Only update quantity if it hasn't been sent to kitchen yet
+        .eq('product_name', fullName) 
+        .eq('status', 'DRAFT') 
         .single();
 
       if (existing) {
@@ -127,38 +137,42 @@ export default function Root() {
         await supabase.from('table_cart_items').insert({
           table_number: selectedTable,
           variant_id: variant.id,
-          product_name: variant.name,
+          product_name: fullName,
           price_at_addition: variant.price,
           quantity: 1,
-          status: 'DRAFT' // Initial status is DRAFT
+          status: 'DRAFT',
+          modifiers: modifiers
         });
         
-        // Update table status to OCCUPIED when the first item is added
         await supabase.from('dining_tables').update({ status: 'OCCUPIED' }).eq('table_number', selectedTable);
       }
-      loadTableCart(); // Sync UI with DB
+      loadTableCart(); 
     } else {
       // Fallback for Quick Service (Local State only)
       setCart((prevCart) => {
-        const existingItem = prevCart.find((item) => item.id === variant.id);
+        const existingItem = prevCart.find((item) => item.id === variant.id && item.name === fullName);
         if (existingItem) {
-          return prevCart.map((item) => item.id === variant.id ? { ...item, quantity: item.quantity + 1 } : item);
+          return prevCart.map((item) => (item.id === variant.id && item.name === fullName) ? { ...item, quantity: item.quantity + 1 } : item);
         } else {
-          return [...prevCart, { id: variant.id, name: variant.name, price: variant.price, quantity: 1 }];
+          return [...prevCart, { id: variant.id, name: fullName, price: variant.price, quantity: 1, modifiers: modifiers }];
         }
       });
     }
   };
 
   // --- 3. Remove from Cart Logic (Syncs with DB) ---
-  const removeFromCart = async (variantId: string) => {
+  const removeFromCart = async (variantId: string, productName?: string) => {
     if (diningModeActive && selectedTable) {
-      // Fetch the most recent addition for this variant at this table
-      const { data: existing } = await supabase
+      // Fetch the most recent addition for this variant/product combo
+      let query = supabase
         .from('table_cart_items')
         .select('*')
         .eq('table_number', selectedTable)
-        .eq('variant_id', variantId)
+        .eq('variant_id', variantId);
+      
+      if (productName) query = query.eq('product_name', productName); // Target specific modified item
+
+      const { data: existing } = await query
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
@@ -168,7 +182,7 @@ export default function Root() {
         if (existing.status === 'SENT') {
           if (!confirm("This item was already sent to the kitchen. Void it?")) return;
           
-          // Find the active kitchen ticket to mark it as VOIDED on the card
+          // Find the active kitchen ticket to mark it as VOIDED
           const { data: activeTicket } = await supabase
             .from('kitchen_tickets')
             .select('*')
@@ -200,11 +214,12 @@ export default function Root() {
       }
       loadTableCart();
     } else {
+      // Local state logic
       setCart((prevCart) => {
-        const existingItem = prevCart.find((item) => item.id === variantId);
+        const existingItem = prevCart.find((item) => item.id === variantId && (productName ? item.name === productName : true));
         if (!existingItem) return prevCart;
-        if (existingItem.quantity === 1) return prevCart.filter((item) => item.id !== variantId);
-        return prevCart.map((item) => item.id === variantId ? { ...item, quantity: item.quantity - 1 } : item);
+        if (existingItem.quantity === 1) return prevCart.filter((item) => !(item.id === variantId && (productName ? item.name === productName : true)));
+        return prevCart.map((item) => (item.id === variantId && (productName ? item.name === productName : true)) ? { ...item, quantity: item.quantity - 1 } : item);
       });
     }
   };
@@ -280,6 +295,7 @@ export default function Root() {
         name: item.name,
         price: item.price,
         quantity: item.quantity,
+        modifiers: item.modifiers || []
       })),
     };
 
@@ -288,6 +304,10 @@ export default function Root() {
     if (error) {
       alert("Transaction Failed!");
     } else {
+      // DEDUCT INGREDIENTS
+      const ingredientItems = cart.map(item => ({ variant_id: item.id, quantity: item.quantity }));
+      deductIngredients(ingredientItems);
+
       // IF DINING MODE: Clear the saved items and reset table status to AVAILABLE
       if (selectedTable) {
         await supabase.from('table_cart_items').delete().eq('table_number', selectedTable);

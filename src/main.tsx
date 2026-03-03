@@ -5,6 +5,7 @@ import Root from './Root'
 import AdminDashboard from './AdminDashboard'
 import Login from './components/Login'
 import KitchenDisplay from './components/KitchenDisplay' // New: KDS Screen
+import CustomerMenu from './components/CustomerMenu' // New: Online Ordering
 import './i18n'; // Import i18n configuration
 import './App.css'
 
@@ -59,6 +60,11 @@ function App() {
   // KITCHEN PAGE ROUTE
   if (path === '/kitchen') {
     return <KitchenDisplay />
+  }
+
+  // CUSTOMER MENU ROUTE (No Auth Required)
+  if (path === '/order') {
+    return <CustomerMenu />
   }
 
   // ADMIN PAGE ACCESS CONTROL

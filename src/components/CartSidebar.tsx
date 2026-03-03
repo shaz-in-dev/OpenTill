@@ -4,7 +4,7 @@ import { TFunction } from 'i18next'; // Type for translation function
 interface Props {
   cartItems: CartItem[]
   onCheckout: () => void
-  onRemoveFromCart: (id: string) => void
+  onRemoveFromCart: (id: string, name?: string) => void
   discountPercentage: number
   onSetDiscount: (val: number) => void
   onSendToKitchen: () => void // New prop for kitchen routing
@@ -47,7 +47,7 @@ export default function CartSidebar({
         ) : (
           cartItems.map(item => (
             <div 
-              key={item.id} 
+              key={`${item.id}-${item.name}`} 
               style={{ 
                 display: 'flex', 
                 justifyContent: 'space-between', 
@@ -60,7 +60,7 @@ export default function CartSidebar({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <button 
-                  onClick={() => onRemoveFromCart(item.id)}
+                  onClick={() => onRemoveFromCart(item.id, item.name)}
                   style={{ 
                     background: '#eda8b2', 
                     color: '#fb1919', 

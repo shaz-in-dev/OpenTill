@@ -6,6 +6,7 @@ const resources = {
   en: {
     translation: {
       "welcome": "Welcome to OpenTill",
+      "products": "Products",      "stock": "Stock",
       "cart": "Current Order",
       "total": "Total",
       "subtotal": "Subtotal",
@@ -70,7 +71,28 @@ const resources = {
       "seated": "Seated",
       "cancelled": "Cancelled",
       "create_booking": "Create Booking",
-      "no_bookings": "No reservations for this date."
+      "no_bookings": "No reservations for this date.",
+      "online_menu_title": "OpenTill Menu",
+      "your_order": "Your Order",
+      "place_order": "Confirm Order",
+      "order_received": "Order Received!",
+      "order_thanks": "Thank you, {{name}}. Your order has been sent to the kitchen.",
+      "place_another": "Place Another Order",
+      "inventory_management": "Inventory Management",
+      "ingredients": "Ingredients",
+      "add_ingredient": "Add Ingredient",
+      "unit": "Unit",
+      "cost_per_unit": "Cost per Unit",
+      "current_stock": "Current Stock",
+      "low_stock_limit": "Low Stock Alert",
+      "recipes": "Recipes",
+      "link_ingredient": "Link Ingredient to Product",
+      "quantity_required": "Quantity Required",
+      "wastage": "Wastage",
+      "log_wastage": "Log Wastage",
+      "reason": "Reason",
+      "stock_updated": "Stock Updated",
+      "ingredient_name": "Ingredient Name"
     }
   },
   es: {
@@ -140,7 +162,28 @@ const resources = {
       "seated": "Sentado",
       "cancelled": "Cancelada",
       "create_booking": "Crear Reserva",
-      "no_bookings": "No hay reservas para esta fecha."
+      "no_bookings": "No hay reservas para esta fecha.",
+      "online_menu_title": "Menú OpenTill",
+      "your_order": "Su Orden",
+      "place_order": "Confirmar Orden",
+      "order_received": "¡Orden Recibida!",
+      "order_thanks": "{{name}}, su orden ha sido enviada a la cocina.",
+      "place_another": "Hacer otra orden",
+      "inventory_management": "Gestión de Inventario",
+      "ingredients": "Ingredientes",
+      "add_ingredient": "Añadir Ingrediente",
+      "unit": "Unidad",
+      "cost_per_unit": "Costo por Unidad",
+      "current_stock": "Stock Actual",
+      "low_stock_limit": "Alerta de Stock Bajo",
+      "recipes": "Recetas",
+      "link_ingredient": "Vincular Ingrediente",
+      "quantity_required": "Cantidad Requerida",
+      "wastage": "Desperdicio",
+      "log_wastage": "Registrar Desperdicio",
+      "reason": "Razón",
+      "stock_updated": "Stock Actualizado",
+      "ingredient_name": "Nombre de Ingrediente"
     }
   }
 };

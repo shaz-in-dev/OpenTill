@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { useTranslation } from 'react-i18next'; // NEW: i18n support
+import ModifierSelectionModal from './ModifierSelectionModal';
 
 interface Variant {
   id: string
@@ -15,6 +16,7 @@ interface Product {
   name: string
   category: string 
   variants: Variant[]
+  modifier_groups?: any[]
 }
 
 interface Props {
@@ -28,6 +30,10 @@ export default function ProductGrid({ onAddToCart }: Props) {
   
   const [selectedCategory, setSelectedCategory] = useState("All") 
   const [searchQuery, setSearchQuery] = useState("") 
+
+  // --- MODIFIERS ---
+  const [selectedProductForMods, setSelectedProductForMods] = useState<Product | null>(null);
+  const [selectedVariantForMods, setSelectedVariantForMods] = useState<Variant | null>(null);
 
   // --- CATEGORY COLOR MAPPING ---
   const getCategoryColor = (category: string) => {
@@ -43,7 +49,7 @@ export default function ProductGrid({ onAddToCart }: Props) {
   const fetchProducts = async () => {
     const { data, error } = await supabase
       .from('products')
-      .select('*, variants(*)')
+      .select('*, variants(*), modifier_groups(*, modifiers(*))')
       .order('name')
     
     if (error) console.error('Error fetching products:', error)
@@ -54,6 +60,44 @@ export default function ProductGrid({ onAddToCart }: Props) {
   useEffect(() => {
     fetchProducts()
   }, [])
+
+  const handleProductClick = (product: Product, variant: Variant) => {
+     // Check if product has modifiers
+     if (product.modifier_groups && product.modifier_groups.length > 0) {
+        setSelectedProductForMods(product);
+        setSelectedVariantForMods(variant);
+     } else {
+        // No modifiers -> Direct Add
+        onAddToCart({
+          id: variant.id,
+          name: `${product.name} (${variant.name})`,
+          price: variant.price,
+          track_stock: variant.track_stock, 
+          stock_quantity: variant.stock_quantity,
+          modifiers: []
+        });
+     }
+  };
+
+  const confirmModifiers = (modifiers: any[]) => {
+      if (!selectedProductForMods || !selectedVariantForMods) return;
+      
+      const totalPrice = selectedVariantForMods.price + modifiers.reduce((sum, m) => sum + m.price_adjustment, 0);
+      
+      onAddToCart({
+          id: selectedVariantForMods.id,
+          name: `${selectedProductForMods.name} (${selectedVariantForMods.name})`,
+          price: totalPrice,
+          original_price: selectedVariantForMods.price,
+          
+          track_stock: selectedVariantForMods.track_stock, 
+          stock_quantity: selectedVariantForMods.stock_quantity,
+          modifiers: modifiers
+      });
+      
+      setSelectedProductForMods(null);
+      setSelectedVariantForMods(null);
+  };
 
   // Generate category list from data
   const categories = ["All", ...Array.from(new Set(products.map(p => p.category || "Uncategorized")))]
@@ -162,13 +206,7 @@ export default function ProductGrid({ onAddToCart }: Props) {
                       <button
                         key={variant.id}
                         disabled={isOutOfStock}
-                        onClick={() => onAddToCart({
-                          id: variant.id,
-                          name: `${product.name} (${variant.name})`,
-                          price: variant.price,
-                          track_stock: variant.track_stock, 
-                          stock_quantity: variant.stock_quantity
-                        })}
+                        onClick={() => handleProductClick(product, variant)}
                         style={{
                           width: '100%',
                           padding: '12px',
@@ -210,6 +248,16 @@ export default function ProductGrid({ onAddToCart }: Props) {
           ))
         )}
       </div>
+      
+      {selectedProductForMods && selectedVariantForMods && (
+        <ModifierSelectionModal 
+           product={selectedProductForMods} 
+           variant={selectedVariantForMods} 
+           onConfirm={confirmModifiers}
+           onCancel={() => { setSelectedProductForMods(null); setSelectedVariantForMods(null); }}
+        />
+      )}
+
     </div>
   )
 }
