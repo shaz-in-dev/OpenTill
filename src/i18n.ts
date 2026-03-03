@@ -58,7 +58,19 @@ const resources = {
       "save_settings": "Save Settings",
       "settings_saved": "Settings saved successfully!",
       "total_sales_today": "Total Sales Today",
-      "top_selling_items": "Top Selling Items"
+      "top_selling_items": "Top Selling Items",
+      "bookings": "Reservations",
+      "new_booking": "New Reservation",
+      "customer_name": "Customer Name",
+      "table_number": "Table No.",
+      "guests": "Guests",
+      "phone": "Phone",
+      "status": "Status",
+      "confirmed": "Confirmed",
+      "seated": "Seated",
+      "cancelled": "Cancelled",
+      "create_booking": "Create Booking",
+      "no_bookings": "No reservations for this date."
     }
   },
   es: {
@@ -116,7 +128,19 @@ const resources = {
       "save_settings": "Guardar Configuración",
       "settings_saved": "¡Configuración guardada!",
       "total_sales_today": "Ventas Totales Hoy",
-      "top_selling_items": "Más Vendidos"
+      "top_selling_items": "Más Vendidos",
+      "bookings": "Reservas",
+      "new_booking": "Nueva Reserva",
+      "customer_name": "Nombre Cliente",
+      "table_number": "No. Mesa",
+      "guests": "Invitados",
+      "phone": "Teléfono",
+      "status": "Estado",
+      "confirmed": "Confirmada",
+      "seated": "Sentado",
+      "cancelled": "Cancelada",
+      "create_booking": "Crear Reserva",
+      "no_bookings": "No hay reservas para esta fecha."
     }
   }
 };

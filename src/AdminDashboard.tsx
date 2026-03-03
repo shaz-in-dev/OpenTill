@@ -30,6 +30,7 @@ export default function AdminDashboard() {
   const [orderSearch, setOrderSearch] = useState('');
 
   const [salesData, setSalesData] = useState<any[]>([])
+  const [bookings, setBookings] = useState<any[]>([])
 
   // FORM STATES
   const [newName, setNewName] = useState('')
@@ -40,6 +41,14 @@ export default function AdminDashboard() {
   const [newPassword, setNewPassword] = useState('')
   const [newRole, setNewRole] = useState('cashier')
 
+  // BOOKING FORM STATE
+  const [bookingName, setBookingName] = useState('')
+  const [bookingDate, setBookingDate] = useState(new Date().toISOString().split('T')[0])
+  const [bookingTime, setBookingTime] = useState('19:00')
+  const [bookingGuests, setBookingGuests] = useState(2)
+  const [bookingPhone, setBookingPhone] = useState('')
+  const [bookingTable, setBookingTable] = useState('')
+
   useEffect(() => {
     // Initial fetch for settings
     fetchSettings()
@@ -48,6 +57,7 @@ export default function AdminDashboard() {
     else if (activeTab === 'sales') fetchOrders()
     else if (activeTab === 'staff') fetchStaff()
     else if (activeTab === 'analytics') fetchAnalytics()
+    else if (activeTab === 'bookings') fetchBookings()
   }, [activeTab])
 
   // --- DATA FETCHING ---
@@ -157,6 +167,52 @@ export default function AdminDashboard() {
     const { data } = await supabase.from('staff_directory').select('*')
     setStaff(data || [])
     setLoading(false)
+  }
+
+  const fetchBookings = async () => {
+    setLoading(true)
+    const start = `${selectedDate}T00:00:00`
+    const end = `${selectedDate}T23:59:59`
+    
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .gte('booking_time', start)
+      .lte('booking_time', end)
+      .order('booking_time', { ascending: true })
+
+    if (error) console.error("Bookings Error:", error)
+    else setBookings(data || [])
+    
+    setLoading(false)
+  }
+
+  const handleCreateBooking = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const ts = `${bookingDate}T${bookingTime}:00`
+    
+    const { error } = await supabase.from('bookings').insert({
+        customer_name: bookingName,
+        phone: bookingPhone,
+        table_number: bookingTable,
+        guests: Number(bookingGuests),
+        booking_time: ts,
+        status: 'confirmed'
+    })
+
+    if (error) alert("Error: " + error.message)
+    else {
+        alert("Reservation Confirmed!")
+        setBookingName('')
+        setBookingPhone('')
+        setBookingTable('') // Reset table
+        if (bookingDate === selectedDate) fetchBookings()
+    }
+  }
+
+  const updateBookingStatus = async (id: string, status: string) => {
+      await supabase.from('bookings').update({ status }).eq('id', id)
+      fetchBookings()
   }
 
 
@@ -277,7 +333,7 @@ export default function AdminDashboard() {
 
       {/* TABS */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '25px', overflowX: 'auto', paddingBottom: '10px' }}>
-        {['inventory', 'sales', 'analytics', 'staff', 'settings'].map(tab => (
+        {['inventory', 'sales', 'analytics', 'bookings', 'staff', 'settings'].map(tab => (
           <button 
             key={tab} 
             onClick={() => setActiveTab(tab)} 
@@ -293,7 +349,7 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      <div style={{ background: 'white', border: '1px solid #ddd', borderRadius: '12px', minHeight: '400px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+      <div style={{ background: 'white', border: '1px solid #ddd', borderRadius: '12px', minHeight: '400px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', overflow: 'auto', maxHeight: '80vh' }}>
         
         {loading ? (
           <div style={{ padding: '50px', textAlign: 'center' }}>{t('loading')}...</div>
@@ -358,6 +414,82 @@ export default function AdminDashboard() {
                   <Bar dataKey="sales" fill="#1565c0" name="Sales ($)" />
                 </BarChart>
               </ResponsiveContainer>
+            </div>
+          </div>
+
+        ) : activeTab === 'bookings' ? (
+          <div style={{ padding: '25px', display: 'flex', gap: '30px', flexDirection: 'row' }}>
+            {/* Left: Create Booking Form */}
+            <div style={{ flex: 1, maxWidth: '350px' }}>
+                <div style={{ background: '#f9f9f9', padding:'20px', borderRadius:'10px', position:'sticky', top:'0' }}>
+                    <h3 style={{margin:'0 0 15px 0'}}>{t('new_booking')}</h3>
+                    <form onSubmit={handleCreateBooking}>
+                        <label style={labelStyle}>{t('date')}/{t('time')}</label>
+                        <div style={{display:'flex', gap:'5px', marginBottom:'10px'}}>
+                            <input type="date" value={bookingDate} onChange={e=>setBookingDate(e.target.value)} style={{flex:1, ...inputStyle}} />
+                            <input type="time" value={bookingTime} onChange={e=>setBookingTime(e.target.value)} style={{flex:1, ...inputStyle}} />
+                        </div>
+                        <label style={labelStyle}>{t('guests')}</label>
+                        <input type="number" min="1" value={bookingGuests} onChange={e=>setBookingGuests(Number(e.target.value))} style={{...inputStyle, marginBottom:'10px'}} />
+                        
+                        <label style={labelStyle}>{t('customer_name')}</label>
+                        <input value={bookingName} onChange={e=>setBookingName(e.target.value)} style={{...inputStyle, marginBottom:'10px'}} />
+                        
+                        <label style={labelStyle}>{t('phone')}</label>
+                        <input value={bookingPhone} onChange={e=>setBookingPhone(e.target.value)} style={{...inputStyle, marginBottom:'10px'}} />
+                        
+                        <label style={labelStyle}>{t('table_number')} (Optional)</label>
+                        <input value={bookingTable} onChange={e=>setBookingTable(e.target.value)} style={{...inputStyle, marginBottom:'20px'}} />
+                        
+                        <button style={{width:'100%', padding:'12px', background:'#000', color:'#fff', border:'none', borderRadius:'6px', cursor:'pointer', fontWeight:'bold'}}>
+                            {t('create_booking')}
+                        </button>
+                    </form>
+                </div>
+            </div>
+            
+            {/* Right: Bookings List */}
+            <div style={{ flex: 2 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px'}}>
+                   <h2 style={{margin:0}}>
+                       {isNaN(new Date(selectedDate).getTime()) ? "Select Date" : new Date(selectedDate).toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'})}
+                   </h2>
+                   <input type="date" value={selectedDate} onChange={e=>setSelectedDate(e.target.value)} style={inputStyle} />
+                </div>
+                
+                {bookings.length === 0 ? (
+                    <div style={{padding:'50px', textAlign:'center', color:'#888', background:'#f9f9f9', borderRadius:'10px'}}>
+                        {t('no_bookings')}
+                    </div>
+                ) : (
+                    <div style={{display:'grid', gap:'15px'}}>
+                        {bookings.map(book => (
+                            <div key={book.id} style={{
+                                padding:'15px', 
+                                borderLeft:`5px solid ${book.status==='seated'?'#2e7d32':book.status==='cancelled'?'#c62828':'#1565c0'}`,
+                                background:'#fff', boxShadow:'0 2px 10px rgba(0,0,0,0.05)', borderRadius:'8px',
+                                display:'flex', justifyContent:'space-between', alignItems:'center'
+                            }}>
+                                <div>
+                                    <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+                                        <div style={{fontWeight:'bold', fontSize:'1.1rem'}}>{new Date(book.booking_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+                                        <div style={{background:'#eee', padding:'2px 8px', borderRadius:'4px', fontSize:'0.8rem'}}>Table {book.table_number || 'Any'}</div>
+                                    </div>
+                                    <div style={{fontSize:'1.1rem', marginTop:'5px'}}>{book.customer_name} ({book.guests} ppl)</div>
+                                    {book.phone && <div style={{fontSize:'0.85rem', color:'#666', marginTop:'2px'}}>📞 {book.phone}</div>}
+                                </div>
+                                <div style={{display:'flex', gap:'5px'}}>
+                                    {book.status !== 'seated' && book.status !== 'cancelled' && (
+                                        <button onClick={()=>updateBookingStatus(book.id, 'seated')} style={{background:'#e8f5e9', border:'1px solid #c8e6c9', color:'#1b5e20', padding:'5px 10px', borderRadius:'4px', cursor:'pointer'}}>{t('seated')}</button>
+                                    )}
+                                    {book.status !== 'cancelled' && (
+                                        <button onClick={()=>updateBookingStatus(book.id, 'cancelled')} style={{background:'#ffebee', border:'1px solid #ffcdd2', color:'#b71c1c', padding:'5px 10px', borderRadius:'4px', cursor:'pointer'}}>{t('cancelled')}</button>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
           </div>
 
