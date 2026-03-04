@@ -147,12 +147,15 @@ export default function KitchenDisplay() {
             const isVoidedTicket = ticket.status === 'VOIDED'; // Check ticket-level void
 
             return (
-              <div key={ticket.id} style={{
-                ...ticketCard,
-                borderColor: isVoidedTicket ? '#b71c1c' : (isLate ? '#d32f2f' : '#2e7d32'),
-                opacity: isVoidedTicket ? 0.8 : 1,
-                animation: 'slideIn 0.3s ease-out'
-              }}>
+              <div 
+                key={`${ticket.is_offline ? 'local' : 'remote'}-${ticket.id}`} 
+                style={{
+                  ...ticketCard,
+                  borderColor: isVoidedTicket ? '#b71c1c' : (isLate ? '#d32f2f' : '#2e7d32'),
+                  opacity: isVoidedTicket ? 0.8 : 1,
+                  animation: 'slideIn 0.3s ease-out'
+                }}
+              >
                 {/* TICKET HEADER */}
                 <div style={{ 
                   ...ticketHeader, 
