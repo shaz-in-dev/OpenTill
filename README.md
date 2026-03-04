@@ -15,8 +15,10 @@
 
 ### 🖥️ **Robust Point of Sale (POS)**
 *   **Quick Service & Dining Modes**: Toggle between fast-casual counter service and full tableside ordering with a visual table map.
-*   **Atomic Transactions**: Utilizing PostgreSQL RPCs (`sell_items`) to ensure **stock deduction** and **financial recording** happen in a single, fail-safe database transaction. Zero race conditions.
+*   **Atomic Transactions**: Utilizing PostgreSQL RPCs (`sell_items`) to ensure **stock deduction**, **financial recording**, and **staff attribution** happen in a single, fail-safe database transaction. Zero race conditions.
     *   *Prevents overselling even during high-traffic periods.*
+    *   *Accurate Tax Calculation*: Built-in logic handles complex tax scenarios reliably.
+*   **Multi-Branch Support**: Tenant isolation logic ensures orders, stock, and tables are siloed by branch ID, preventing data leaks in multi-location setups.
 *   **True Offline Resilience**: Built on **Dexie.js** and **Workbox**, the POS works completely offline.
     *   Orders are stored locally in IndexedDB.
     *   **Auto-Sync**: Background synchronization pushes offline sales and kitchen tickets the moment connectivity returns.
