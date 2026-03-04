@@ -53,18 +53,17 @@ function App() {
 
   if (loading) return <div style={{ padding: '50px', textAlign: 'center' }}>Loading System...</div>
 
-  if (!session) return <Login />
-
+  // PUBLIC ROUTES (No Auth Required)
   const path = window.location.pathname
+  if (path === '/order') {
+    return <CustomerMenu />
+  }
+
+  if (!session) return <Login />
 
   // KITCHEN PAGE ROUTE
   if (path === '/kitchen') {
     return <KitchenDisplay />
-  }
-
-  // CUSTOMER MENU ROUTE (No Auth Required)
-  if (path === '/order') {
-    return <CustomerMenu />
   }
 
   // ADMIN PAGE ACCESS CONTROL
@@ -151,7 +150,7 @@ function App() {
         </div>
       </div>
 
-      <Root />
+      <Root userRole={userRole || 'cashier'} />
     </div>
   )
 }

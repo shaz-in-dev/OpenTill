@@ -147,6 +147,11 @@ export default function CustomerMenu() {
       </div>
 
       {/* MENU GRID */}
+      {filteredProducts.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '50px', color: '#666' }}>
+          <p>No items found in this category.</p>
+        </div>
+      ) : (
       <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '15px', maxWidth: '800px', margin: '0 auto' }}>
         {filteredProducts.map(p => (
           <div key={p.id} style={{ border: '1px solid #eee', borderRadius: '12px', overflow: 'hidden', background: 'white', display: 'flex', flexDirection: 'column' }}>
@@ -164,6 +169,7 @@ export default function CustomerMenu() {
           </div>
         ))}
       </div>
+      )}
 
       {/* CART FLOATING BAR */}
       {cart.length > 0 && (

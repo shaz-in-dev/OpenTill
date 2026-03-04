@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 import ReceiptModal from './components/ReceiptModal'
 import InventoryManager from './components/InventoryManager'
+import SupplyChain from './components/SupplyChain'
 import ModifierManager from './components/ModifierManager'
+import { convertToCSV } from './utils/exporter'
 import { useTranslation } from 'react-i18next'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
@@ -25,6 +27,7 @@ export default function AdminDashboard() {
   const [storeAddress, setStoreAddress] = useState('123 Code Street')
   const [taxRate, setTaxRate] = useState(10)
   const [currency, setCurrency] = useState('$')
+  const [totalProfit, setTotalProfit] = useState(0);
 
   // State for the Receipt Modal
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<any>(null)
@@ -34,6 +37,7 @@ export default function AdminDashboard() {
   const [orderSearch, setOrderSearch] = useState('');
 
   const [salesData, setSalesData] = useState<any[]>([])
+  const [topSelling, setTopSelling] = useState<{name: string, qty: number}[]>([]); // New:
   const [bookings, setBookings] = useState<any[]>([])
 
   // FORM STATES
@@ -53,6 +57,8 @@ export default function AdminDashboard() {
   const [bookingPhone, setBookingPhone] = useState('')
   const [bookingTable, setBookingTable] = useState('')
 
+  const [staffPerformance, setStaffPerformance] = useState<{name: string, total: number}[]>([])
+
   useEffect(() => {
     // Initial fetch for settings
     fetchSettings()
@@ -62,7 +68,7 @@ export default function AdminDashboard() {
     else if (activeTab === 'staff') fetchStaff()
     else if (activeTab === 'analytics') fetchAnalytics()
     else if (activeTab === 'bookings') fetchBookings()
-  }, [activeTab])
+  }, [activeTab, selectedDate]) // Refresh on date change
 
   // --- DATA FETCHING ---
   const fetchSettings = async () => {
@@ -86,21 +92,31 @@ export default function AdminDashboard() {
   }
 
   const fetchAnalytics = async () => {
-    // Determine start/end of today
-    const start = new Date()
-    start.setHours(0,0,0,0)
+    // Determine start/end of selected date
+    const start = `${selectedDate}T00:00:00`
+    const end = `${selectedDate}T23:59:59`
     
-    // Fetch orders for today
+    // Fetch orders for date range
     const { data } = await supabase
       .from('orders')
-      .select('*')
-      .gte('created_at', start.toISOString())
+      .select('*, order_items(cost_at_sale)')
+      .gte('created_at', start)
+      .lte('created_at', end)
     
-    if (data && data.length > 0) {
+    if (data) {
+      // Calculate Total COGS
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const totalCOGS = data.reduce((acc: number, order: any) => {
+        const orderCost = order.order_items?.reduce((sum: number, item: any) => sum + (item.cost_at_sale || 0), 0) || 0;
+        return acc + orderCost;
+      }, 0);
+      
+      setTotalProfit((data.reduce((sum, o) => sum + (o.total_amount || 0), 0) - totalCOGS));
+
       // Group by hour for chart
       const hours = Array(24).fill(0).map((_, i) => ({ name: `${i}:00`, sales: 0 }))
       
-      data.forEach(order => {
+      data.forEach((order: any) => {
         if (!order.created_at) return; 
         const date = new Date(order.created_at);
         if (isNaN(date.getTime())) return;
@@ -109,6 +125,46 @@ export default function AdminDashboard() {
       })
       
       setSalesData(hours.filter(h => h.sales > 0)) // Only show active hours
+
+      // Calculate Top Selling Items
+      const itemMap: Record<string, number> = {};
+      data.forEach((order: any) => {
+        order.order_items?.forEach((item: any) => {
+           const name = item.product_name_snapshot || 'Unknown';
+           itemMap[name] = (itemMap[name] || 0) + (item.quantity || 0);
+        });
+      });
+      
+      const sortedItems = Object.entries(itemMap)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 5)
+        .map(([name, qty]) => ({ name, qty }));
+        
+      setTopSelling(sortedItems);
+
+      // Calculate Staff Performance
+      // Note: This requires orders to have user_id and us to fetch staff list to map IDs to emails/names
+      // For now we will use the user_id or 'Unknown'
+      const staffSales: Record<string, number> = {}
+      
+      // Get all unique user IDs involved
+      const userIds = [...new Set(data.map((o:any) => o.user_id).filter(Boolean))];
+      
+      let userMap: Record<string, string> = {};
+      if (userIds.length > 0) {
+          const { data: users } = await supabase.from('staff_directory').select('id, email').in('id', userIds);
+          if (users) {
+              users.forEach(u => { userMap[u.id] = u.email })
+          }
+      }
+
+      data.forEach((order: any) => {
+          const uid = order.user_id;
+          const name = userMap[uid] || (uid ? uid.substring(0,8) : 'Kiosk/Unassigned');
+          staffSales[name] = (staffSales[name] || 0) + (order.total_amount || 0);
+      })
+
+      setStaffPerformance(Object.entries(staffSales).map(([name, total]) => ({ name, total })).sort((a,b) => b.total - a.total));
     }
   }
 
@@ -154,6 +210,7 @@ export default function AdminDashboard() {
         order_items (
           quantity,
           price_at_sale,
+          cost_at_sale,
           product_name_snapshot,
           variant_id,
           variants (name)
@@ -330,14 +387,19 @@ export default function AdminDashboard() {
            <h1 style={{ margin: 0 }}>📦 Admin Portal</h1>
            <p style={{ margin: 0, color: '#666', fontSize: '0.9rem' }}>Real-time management for OpenTill POS.</p>
         </div>
-        <a href="/" style={{ padding: '10px 20px', background: '#333', color: 'white', textDecoration: 'none', borderRadius: '6px', fontWeight: 'bold' }}>
-          ← Back to Till
-        </a>
+        <div style={{ display: 'flex', gap: '10px' }}>
+            <a href="/order" target="_blank" style={{ padding: '10px 20px', background: '#2e7d32', color: 'white', textDecoration: 'none', borderRadius: '6px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              📱 View Menu
+            </a>
+            <a href="/" style={{ padding: '10px 20px', background: '#333', color: 'white', textDecoration: 'none', borderRadius: '6px', fontWeight: 'bold' }}>
+              ← Back to Till
+            </a>
+        </div>
       </div>
 
       {/* TABS */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '25px', overflowX: 'auto', paddingBottom: '10px' }}>
-        {['products', 'stock', 'sales', 'analytics', 'bookings', 'staff', 'settings'].map(tab => (
+        {['products', 'stock', 'purchasing', 'sales', 'analytics', 'bookings', 'staff', 'settings'].map(tab => (
           <button 
             key={tab} 
             onClick={() => setActiveTab(tab)} 
@@ -396,20 +458,64 @@ export default function AdminDashboard() {
 
         ) : activeTab === 'stock' ? (
           <InventoryManager />
+        ) : activeTab === 'purchasing' ? (
+          <SupplyChain />
         ) : activeTab === 'analytics' ? (
           <div style={{ padding: '25px', height: '100%' }}>
-            <h2 style={{ marginTop: 0 }}>{t('analytics')}</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h2 style={{ margin: 0 }}>{t('analytics')}</h2>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                   <label style={{ marginRight: '10px', fontWeight: 'bold' }}>{t('date')}:</label>
+                   <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} style={inputStyle} />
+                </div>
+            </div>
             
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '30px' }}>
               <div style={{ padding: '20px', background: '#f8f9fa', borderRadius: '12px' }}>
-                <h3 style={{ margin: '0 0 10px 0', color: '#555' }}>{t('total_sales_today')}</h3>
+                <h3 style={{ margin: '0 0 10px 0', color: '#555' }}>{t('total_sales')}</h3>
                 <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#2e7d32' }}>
                   {currency}{(salesData.reduce((sum, item) => sum + item.sales, 0) / 100).toFixed(2)}
                 </div>
               </div>
+
+              <div style={{ padding: '20px', background: '#fff3e0', borderRadius: '12px' }}>
+                <h3 style={{ margin: '0 0 10px 0', color: '#e65100' }}>Est. Gross Profit</h3>
+                <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#e65100' }}>
+                  {currency}{(totalProfit / 100).toFixed(2)}
+                </div>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: '#666' }}>Sales - COGS</p>
+              </div>
+
               <div style={{ padding: '20px', background: '#e3f2fd', borderRadius: '12px' }}>
                 <h3 style={{ margin: '0 0 10px 0', color: '#1565c0' }}>{t('top_selling_items')}</h3>
-                <div style={{ fontSize: '1.2rem', color: '#555' }}>Coming Soon...</div>
+                <ul style={{ paddingLeft: '20px', margin: 0 }}>
+                    {topSelling.length > 0 ? topSelling.map((it, idx) => (
+                        <li key={idx} style={{ marginBottom: '5px' }}>
+                            <strong>{it.qty}x</strong> {it.name}
+                        </li>
+                    )) : <div>Loading...</div>}
+                </ul>
+                <div style={{ marginTop: '15px' }}>
+                  <button onClick={() => convertToCSV(topSelling, `Top_Items_${selectedDate}`)} style={{ ...btnStyle, background: '#1976d2', color: 'white', border: 'none', width: '100%' }}>
+                     Download Report
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ padding: '20px', background: '#f3e5f5', borderRadius: '12px' }}>
+                <h3 style={{ margin: '0 0 10px 0', color: '#7b1fa2' }}>{t('staff_performance')}</h3>
+                <ul style={{ paddingLeft: '20px', margin: 0 }}>
+                    {staffPerformance.length > 0 ? staffPerformance.map((s, idx) => (
+                        <li key={idx} style={{ marginBottom: '5px' }}>
+                           {s.name}: <strong>{currency}{(s.total / 100).toFixed(2)}</strong>
+                        </li>
+                    )) : <div>No data</div>}
+                </ul>
+                <div style={{ marginTop: '15px' }}>
+                  <button onClick={() => convertToCSV(staffPerformance.map(s => ({ Name: s.name, Sales: (s.total/100).toFixed(2) })), `Staff_Perf_${selectedDate}`)} style={{ ...btnStyle, background: '#8e24aa', color: 'white', border: 'none', width: '100%' }}>
+                     Download Report
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -608,9 +714,23 @@ export default function AdminDashboard() {
                   <label style={labelStyle}>{t('date')}</label>
                   <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} style={inputStyle} />
                </div>
-               <div style={{ textAlign: 'right', background: '#e8f5e9', padding: '10px 20px', borderRadius: '8px', border: '1px solid #c8e6c9', minWidth: '150px' }}>
-                  <small style={{ color: '#2e7d32', fontWeight: 'bold' }}>{filteredOrders.length} {t('orders').toUpperCase()}</small>
-                  <h2 style={{ margin: 0, color: '#1b5e20' }}>{currency}{dailyTotal.toFixed(2)}</h2>
+               <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
+                  <div style={{ background: '#e8f5e9', padding: '10px 20px', borderRadius: '8px', border: '1px solid #c8e6c9', minWidth: '150px' }}>
+                      <small style={{ color: '#2e7d32', fontWeight: 'bold' }}>{filteredOrders.length} {t('orders').toUpperCase()}</small>
+                      <h2 style={{ margin: 0, color: '#1b5e20' }}>{currency}{dailyTotal.toFixed(2)}</h2>
+                  </div>
+                  <button 
+                    onClick={() => convertToCSV(filteredOrders.map(o => ({
+                        id: o.id,
+                        date: new Date(o.created_at).toLocaleString(),
+                        total: (o.total_amount / 100).toFixed(2),
+                        method: o.payment_method,
+                        status: o.status
+                    })), `Sales_Report_${selectedDate}`)}
+                    style={{ ...btnStyle, background: '#1976d2', color: 'white', border: 'none' }}
+                  >
+                    📥 Export CSV
+                  </button>
                </div>
             </div>
 
@@ -686,6 +806,15 @@ export default function AdminDashboard() {
              quantity: i.quantity
           }))}
           onClose={() => setSelectedReceiptOrder(null)}
+        />
+      )}
+
+      {/* MODIFIER MANAGER MODAL */}
+      {selectedProductForMods && (
+        <ModifierManager 
+          productId={selectedProductForMods.id} 
+          productName={selectedProductForMods.name}
+          onClose={() => setSelectedProductForMods(null)} 
         />
       )}
     </div>

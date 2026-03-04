@@ -59,6 +59,8 @@ const resources = {
       "save_settings": "Save Settings",
       "settings_saved": "Settings saved successfully!",
       "total_sales_today": "Total Sales Today",
+      "total_sales": "Total Sales",
+      "staff_performance": "Staff Performance",
       "top_selling_items": "Top Selling Items",
       "bookings": "Reservations",
       "new_booking": "New Reservation",

@@ -21,19 +21,20 @@ interface Product {
 
 interface Props {
   onAddToCart: (item: any) => void
+  branchId: string | null
 }
 
-export default function ProductGrid({ onAddToCart }: Props) {
+export default function ProductGrid({ onAddToCart, branchId }: Props) {
   const { t } = useTranslation(); // Hook
-  const [products, setProducts] = useState<Product[]>([])
+  const [products, setProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   
   const [selectedCategory, setSelectedCategory] = useState("All") 
   const [searchQuery, setSearchQuery] = useState("") 
 
   // --- MODIFIERS ---
-  const [selectedProductForMods, setSelectedProductForMods] = useState<Product | null>(null);
-  const [selectedVariantForMods, setSelectedVariantForMods] = useState<Variant | null>(null);
+  const [selectedProductForMods, setSelectedProductForMods] = useState<any | null>(null);
+  const [selectedVariantForMods, setSelectedVariantForMods] = useState<any | null>(null);
 
   // --- CATEGORY COLOR MAPPING ---
   const getCategoryColor = (category: string) => {
@@ -47,21 +48,44 @@ export default function ProductGrid({ onAddToCart }: Props) {
   }
 
   const fetchProducts = async () => {
+    // Determine query: include branch_specific stock 
     const { data, error } = await supabase
       .from('products')
-      .select('*, variants(*), modifier_groups(*, modifiers(*))')
+      .select(`
+        *, 
+        variants(
+          *, 
+          branch_product_stock(branch_id, stock_quantity)
+        ), 
+        modifier_groups(*, modifiers(*))
+      `)
       .order('name')
     
     if (error) console.error('Error fetching products:', error)
-    else setProducts(data || [])
+    else {
+      // Process Data to merge stock correctly based on branchId
+      const processed = (data || []).map((p: any) => ({
+        ...p,
+        variants: p.variants.map((v: any) => {
+           // Find stock for this branch, or default to 0 if tracking is enabled but no record found
+           const branchStockRecord = v.branch_product_stock?.find((s: any) => s.branch_id === branchId);
+           return {
+             ...v,
+             // If tracking is off, we say 9999. If on, we use the branch record or 0.
+             stock_quantity: v.track_stock ? (branchStockRecord ? branchStockRecord.stock_quantity : 0) : 9999
+           }
+        })
+      }));
+      setProducts(processed)
+    }
     setLoading(false)
   }
 
   useEffect(() => {
-    fetchProducts()
-  }, [])
+    if (branchId) fetchProducts()
+  }, [branchId])
 
-  const handleProductClick = (product: Product, variant: Variant) => {
+  const handleProductClick = (product: any, variant: any) => {
      // Check if product has modifiers
      if (product.modifier_groups && product.modifier_groups.length > 0) {
         setSelectedProductForMods(product);
@@ -73,7 +97,7 @@ export default function ProductGrid({ onAddToCart }: Props) {
           name: `${product.name} (${variant.name})`,
           price: variant.price,
           track_stock: variant.track_stock, 
-          stock_quantity: variant.stock_quantity,
+          stock_quantity: variant.stock_quantity, // Calculated from branch logic
           modifiers: []
         });
      }

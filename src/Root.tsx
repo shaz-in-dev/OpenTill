@@ -20,7 +20,11 @@ export interface CartItem {
   status?: string;
 }
 
-export default function Root() {
+interface RootProps {
+  userRole: string;
+}
+
+export default function Root({ userRole }: RootProps) {
   const { t, i18n } = useTranslation(); // Hook for translations
 
   // --- State Management ---
@@ -34,6 +38,7 @@ export default function Root() {
   // --- Table Management States ---
   const [diningModeActive, setDiningModeActive] = useState(false); 
   const [selectedTable, setSelectedTable] = useState<string | null>(null); 
+  const [currentBranchId, setCurrentBranchId] = useState<string | null>(null); // NEW: Multi-Tenant Branch ID
 
   // --- NEW: Notification State ---
   const [notification, setNotification] = useState<string | null>(null);
@@ -41,7 +46,19 @@ export default function Root() {
   // --- 1. Load Settings and Persistent Cart ---
   useEffect(() => {
     fetchDiningMode();
+    fetchBranchContext(); // NEW: Fetch Branch
   }, []);
+
+  // --- NEW: Multi-Tenant Context Loader ---
+  const fetchBranchContext = async () => {
+    // For now, we just grab the first branch available. 
+    // In a real multi-unit setup, this would be a selection screen or stored in localStorage.
+    const { data: branches } = await supabase.from('branches').select('id, name').limit(1);
+    if (branches && branches.length > 0) {
+      setCurrentBranchId(branches[0].id);
+      console.log("Active Branch:", branches[0].name);
+    }
+  };
 
   // --- NEW: Notification Listener ---
   useEffect(() => {
@@ -180,6 +197,9 @@ export default function Root() {
       if (existing) {
         // Handle Voids for items already sent to kitchen
         if (existing.status === 'SENT') {
+          if (userRole !== 'manager') {
+            return alert("Manager approval required to void sent items.");
+          }
           if (!confirm("This item was already sent to the kitchen. Void it?")) return;
           
           // Find the active kitchen ticket to mark it as VOIDED
@@ -288,6 +308,7 @@ export default function Root() {
     const totalAmount = subtotal - discountAmount + tipAmount;
 
     const payload = {
+      branchId: currentBranchId, // NEW: Context passed for multi-unit stock tracking
       totalAmount: totalAmount,
       paymentMethod: method,
       items: cart.map((item) => ({
@@ -447,7 +468,7 @@ export default function Root() {
             </div>
           )}
 
-          <ProductGrid key={refreshKey} onAddToCart={addToCart} />
+          <ProductGrid key={refreshKey} onAddToCart={addToCart} branchId={currentBranchId} />
         </div>
 
         <div className="sidebar-section">
