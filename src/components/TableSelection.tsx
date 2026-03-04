@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
-import { useTranslation } from 'react-i18next'; // NEW: i18n
-import { ArrowLeft } from 'lucide-react'; // NEW: Icon
+import { useTranslation } from 'react-i18next';
+import { ArrowLeft, CalendarPlus } from 'lucide-react'; // NEW: Added CalendarPlus
+import BookingModal from './BookingModal'; // NEW: Import
 
 interface DiningTable {
   id: number
@@ -11,13 +12,14 @@ interface DiningTable {
 
 interface Props {
   onSelect: (tableName: string) => void
-  setDiningMode: (mode: boolean) => void // NEW: To go back
+  setDiningMode: (mode: boolean) => void 
 }
 
 export default function TableSelection({ onSelect, setDiningMode }: Props) {
-  const { t } = useTranslation(); // Hook
+  const { t } = useTranslation(); 
   const [tables, setTables] = useState<DiningTable[]>([])
   const [loading, setLoading] = useState(true)
+  const [showBookingModal, setShowBookingModal] = useState(false); // NEW: State for Booking Modal
 
   // Fetch tables from the database you just set up with SQL
   useEffect(() => {
@@ -65,40 +67,61 @@ export default function TableSelection({ onSelect, setDiningMode }: Props) {
 
   return (
     <div style={{ 
-      padding: '40px', 
+      padding: '20px', 
       textAlign: 'center', 
       height: '100%', 
       overflowY: 'auto',
       boxSizing: 'border-box',
-      background: '#f9f9f9',
+      background: 'var(--bg-primary)',
+      color: 'var(--text-primary)',
       position: 'relative' // For absolute positioning of Back button
     }}>
       {/* Back Button to Quick Service */}
-      <button 
-        onClick={() => setDiningMode(false)}
-        style={{
-          position: 'absolute',
-          top: '40px',
-          left: '40px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '10px 15px',
-          border: '1px solid #ddd',
-          background: 'white',
-          borderRadius: '8px',
-          cursor: 'pointer',
-          fontWeight: 'bold',
-          color: '#555'
-        }}
-      >
-        <ArrowLeft size={18} />
-        {t('quick_service')}
-      </button>
+      <div style={{ position: 'absolute', top: '40px', left: '40px', display: 'flex', gap: '15px' }}>
+        <button 
+          onClick={() => setDiningMode(false)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 15px',
+            border: '1px solid var(--border-color)',
+            background: 'var(--card-bg)',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            color: 'var(--text-primary)'
+          }}
+        >
+          <ArrowLeft size={18} />
+          {t('quick_service')}
+        </button>
+
+        {/* NEW: New Booking Button */}
+        <button 
+          onClick={() => setShowBookingModal(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 15px',
+            border: 'none',
+            background: 'var(--primary-color)',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            color: 'white',
+            boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
+          }}
+        >
+          <CalendarPlus size={18} />
+          {t('new_booking')}
+        </button>
+      </div>
 
       <div style={{ marginBottom: '40px' }}>
         <h1 style={{ margin: '0 0 10px 0', fontSize: '2.5rem', fontWeight: '800' }}>{t('dining_mode')}</h1>
-        <p style={{ color: '#666', fontSize: '1.1rem' }}>{t('select_table')}</p>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>{t('select_table')}</p>
       </div>
       
       <div style={{ 
@@ -109,7 +132,7 @@ export default function TableSelection({ onSelect, setDiningMode }: Props) {
         margin: '0 auto'
       }}>
         {tables.length === 0 ? (
-          <p style={{ gridColumn: '1/-1', color: '#999' }}>No tables configured in database.</p>
+          <p style={{ gridColumn: '1/-1', color: 'var(--text-secondary)' }}>No tables configured in database.</p>
         ) : (
           tables.map(table => (
             <button 
@@ -122,9 +145,9 @@ export default function TableSelection({ onSelect, setDiningMode }: Props) {
                 fontWeight: 'bold', 
                 borderRadius: '20px', 
                 border: '2px solid',
-                borderColor: table.status === 'AVAILABLE' ? '#eee' : '#ffcdd2', 
-                background: table.status === 'AVAILABLE' ? 'white' : '#ffebee',
-                color: table.status === 'AVAILABLE' ? '#111' : '#c62828',
+                borderColor: table.status === 'AVAILABLE' ? 'var(--border-color)' : 'var(--danger-color)', 
+                background: table.status === 'AVAILABLE' ? 'var(--card-bg)' : '#ffebee', // Keep slight red tint for occupied but use vars where possible
+                color: table.status === 'AVAILABLE' ? 'var(--text-primary)' : 'var(--danger-color)',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
@@ -143,8 +166,8 @@ export default function TableSelection({ onSelect, setDiningMode }: Props) {
                 letterSpacing: '1px',
                 padding: '4px 8px',
                 borderRadius: '4px',
-                background: table.status === 'AVAILABLE' ? '#e8f5e9' : '#ffcdd2',
-                color: table.status === 'AVAILABLE' ? '#2e7d32' : '#c62828'
+                background: table.status === 'AVAILABLE' ? 'var(--success-color)' : 'var(--danger-color)',
+                color: '#fff' // White text on badges is usually safer for contrast
               }}>
                 {table.status}
               </span>
@@ -154,9 +177,16 @@ export default function TableSelection({ onSelect, setDiningMode }: Props) {
       </div>
 
       {/* Footer hint */}
-      <div style={{ marginTop: '50px', color: '#aaa', fontSize: '0.9rem' }}>
+      <div style={{ marginTop: '50px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
         Table configurations can be managed in the Admin Dashboard.
       </div>
+
+      {showBookingModal && (
+        <BookingModal 
+          onClose={() => setShowBookingModal(false)} 
+          onSuccess={() => fetchTables()} 
+        />
+      )}
     </div>
   )
 }

@@ -24,9 +24,14 @@
   --success-color: #81c784;
   --danger-color: #e57373;
   --card-bg: #1e1e1e;
+  --hover-bg: #333333;
 }
 
 /* --- GLOBAL RESET & BASE STYLES --- */
+* {
+  box-sizing: border-box; /* Global box-sizing reset for consistent layout */
+}
+
 body, html {
   margin: 0;
   padding: 0;
@@ -43,7 +48,8 @@ body, html {
 .app-container {
   display: flex;
   flex-direction: column; 
-  height: 100vh;
+  height: 100vh; /* Fallback */
+  height: 100dvh; /* Dynamic Viewport Height for Mobile */
   width: 100vw;
 }
 
@@ -52,6 +58,9 @@ body, html {
   display: flex;
   flex: 1; 
   overflow: hidden;
+  position: relative;
+  /* Ensure correct height calculation */
+  height: calc(100dvh - 60px); 
 }
 
 /* Left side: Product catalog */
@@ -60,6 +69,7 @@ body, html {
   overflow-y: auto;
   padding: 20px;
   background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 /* Right side: Cart/Order sidebar */
@@ -69,13 +79,187 @@ body, html {
   border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  height: 100%;
-  position: relative;
+  height: 100%; 
+  min-height: 0; /* Crucial: Allow flex item to shrink below content size */
+  flex-shrink: 0; 
+  position: relative; 
+  color: var(--text-primary);
+  /* Use z-index to overlay on mobile if needed */
+  z-index: 1000;
+  transition: transform 0.3s ease-in-out;
+  overflow: hidden; 
+}
+
+/* --- MOBILE & RESPONSIVE LAYOUT --- */
+.cart-sidebar-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1; 
+  /* Removed height: 100% to prevent overflow when header is present */
+  width: 100%;
+  overflow: hidden; 
+  box-sizing: border-box;
+  min-height: 0; /* Crucial for nested flex scrolling */
+}
+
+.mobile-cart-toggle,
+.mobile-backdrop,
+.mobile-cart-header {
+  display: none; /* Hidden by default on desktop */
+}
+
+/* Tablet & Mobile Screens (below 1024px) */
+@media screen and (max-width: 1024px) {
+  /* Hide the internal sidebar header to avoid duplication on mobile */
+  .cart-sidebar-inner .sidebar-header {
+    display: none;
+  }
+
+  .sidebar-section {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0; /* Force anchor to bottom */
+    height: 100dvh; /* Use viewport height */
+    width: 350px; 
+    transform: translateX(100%); 
+    box-shadow: -5px 0 15px rgba(0,0,0,0.2);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1200; 
+    background: var(--bg-secondary);
+  }
+
+  /* When open, ensure it covers properly */
+  .sidebar-section.open {
+    transform: translateX(0);
+  }
+
+  .mobile-cart-toggle {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 56px;
+    height: 56px;
+    background-color: var(--primary-color);
+    color: white;
+    border-radius: 50%;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    z-index: 1100;
+    cursor: pointer;
+    font-size: 1.5rem;
+    transition: transform 0.2s;
+  }
+  
+  .mobile-cart-toggle:active {
+    transform: scale(0.95);
+  }
+
+  .mobile-cart-toggle .badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background: var(--danger-color);
+    color: white;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    font-size: 0.75rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: bold;
+    border: 2px solid var(--bg-secondary);
+  }
+
+  .mobile-backdrop {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1150; /* Below sidebar (1200) but above content */
+    backdrop-filter: blur(2px);
+  }
+
+  .mobile-cart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+  }
+
+  .mobile-cart-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+  }
+
+  .mobile-cart-header button {
+    background: none;
+    border: none;
+    font-size: 1.8rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+  }
+  
+  .mobile-cart-header button:hover {
+    opacity: 1;
+  }
+  
+  /* Stack the grid better on mobile */
+  .product-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    padding-bottom: 80px; /* Space for FAB */
+  }
+}
+
+/* Very small screens (Mobile portrait) */
+@media screen and (max-width: 480px) {
+  .sidebar-section {
+    width: 100%; /* Full width on small phones */
+    max-width: 100%;
+  }
+  
+  .product-grid {
+    grid-template-columns: 1fr; /* Single column */
+    gap: 12px;
+  }
+  
+  .product-card {
+    flex-direction: row; /* Horizontal cards on mobile list */
+    min-height: 100px;
+    align-items: center;
+  }
+
+  .product-card img { /* If there were images */
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+  }
+  
+  .product-card-content {
+    padding: 12px;
+  }
 }
 
 /* --- SIDEBAR COMPONENTS --- */
 .sidebar-header {
   padding: 25px 25px 10px 25px;
+  border-bottom: 1px solid var(--border-color);
 }
 
 /* Middle section for cart items - only this part scrolls */
@@ -83,69 +267,133 @@ body, html {
   flex: 1;
   overflow-y: auto;
   padding: 0 25px;
+  min-height: 0; /* Crucial for nested flex scrolling */
+  overscroll-behavior: contain; /* Prevent main window scroll */
 }
 
 /* Footer locked at the bottom of the sidebar */
 .order-summary-footer {
-  border-top: 2px solid #f0f0f0;
-  padding: 20px 25px 25px 25px;
-  background: white;
+  border-top: 2px solid var(--border-color);
+  padding: 15px 25px; /* Slightly reduced padding */
+  background: var(--bg-secondary);
   margin-top: auto; 
+  flex-shrink: 0; /* Never shrink the footer */
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* --- PRODUCT GRID & CARDS --- */
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 15px;
   padding: 10px;
 }
 
 .product-card {
-  background: white;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  overflow: hidden;
+  display: flex; 
+  flex-direction: column; 
+  height: 100%;
+  min-height: 160px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.product-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.12);
+}
+
+.product-card-content {
   padding: 15px;
-  text-align: center;
-  cursor: pointer;
-  transition: transform 0.1s, box-shadow 0.1s, background-color 0.2s;
+  flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  min-height: 100px;
 }
 
 .product-card h3 {
-  font-size: 1rem;
+  font-size: 1.2rem;
   margin: 0 0 5px 0;
+  font-weight: 800;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.product-card:active {
-  transform: scale(0.96);
-  background-color: #fafafa;
+.product-category {
+  font-size: 0.75rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  margin-bottom: 15px;
+}
+
+/* Variant Button inside Card */
+.variant-btn {
+  width: 100%;
+  padding: 12px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: 0.1s;
+  margin-bottom: 8px;
+}
+
+.variant-btn:hover:not(:disabled) {
+  background: var(--hover-bg, #f0f0f0);
+}
+
+.variant-btn:disabled {
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  border-color: var(--border-color);
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* --- UI ELEMENTS & BUTTONS --- */
 button {
   cursor: pointer;
   transition: opacity 0.2s, transform 0.1s, background 0.2s;
+  font-family: inherit;
 }
 
-button:disabled {
-  opacity: 0.5;
-  filter: grayscale(1);
-  cursor: not-allowed;
+/* Category Filter Buttons */
+.category-filter-btn {
+  padding: 10px 25px;
+  border-radius: 30px;
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-weight: bold;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  white-space: nowrap;
+  font-size: 0.9rem;
+  transition: 0.2s;
 }
 
-/* Main Action Button (Black) */
+.category-filter-btn.active {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  border-color: var(--text-primary);
+}
+
+/* Pay Now Button */
 .pay-now-button {
   width: 100%;
   padding: 18px;
-  background-color: #111; /* Solid black */
-  color: #fff;
+  background-color: var(--text-primary); 
+  color: var(--bg-primary);
   border: none;
   border-radius: 12px;
   font-size: 1.1rem;
@@ -175,7 +423,54 @@ button:disabled {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: 2000;
+}
+
+.modal-content {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 30px;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  position: relative;
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 25px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 15px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.close-button {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 50%;
+  transition: 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-button:hover {
+  background: var(--bg-primary);
+  color: var(--danger-color);
 }
 
 /* --- CUSTOM SCROLLBARS --- */

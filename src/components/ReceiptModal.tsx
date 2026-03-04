@@ -28,11 +28,14 @@ export default function ReceiptModal({ orderId, subtotal, discount, tip, total, 
     }}>
       <div className="receipt" style={{
         background: 'white',
-        padding: '40px',
-        width: '300px',
+        padding: '20px',
+        width: '90%',
+        maxWidth: '350px',
         fontFamily: 'Courier New, monospace', 
         boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
-        textAlign: 'center'
+        textAlign: 'center',
+        overflowY: 'auto',
+        maxHeight: '90vh'
       }}>
         
         <h2 style={{ marginBottom: '5px', textTransform: 'uppercase' }}>OpenTill Coffee</h2>

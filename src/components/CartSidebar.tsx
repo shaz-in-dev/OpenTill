@@ -32,7 +32,7 @@ export default function CartSidebar({
   const hasNewItems = cartItems.some(item => (item as any).status === 'DRAFT' || !(item as any).status)
 
   return (
-    <div className="sidebar-section">
+    <div className="cart-sidebar-inner">
       {/* --- HEADER (Fixed) --- */}
       <div className="sidebar-header">
         <h2 style={{ marginTop: 0, fontSize: '1.5rem' }}>{t('cart')}</h2>
@@ -172,7 +172,7 @@ export default function CartSidebar({
           display: 'flex', 
           alignItems: 'center', 
           gap: '15px', 
-          borderTop: '2px solid #f0f0f0', 
+          borderTop: '2px solid var(--border-color)', 
           paddingTop: '20px' 
         }}>
           
@@ -180,7 +180,7 @@ export default function CartSidebar({
           <div style={{ flex: 1 }}>
             <div style={{ 
               fontSize: '0.85rem', 
-              color: '#999', 
+              color: 'var(--text-secondary)', 
               textTransform: 'uppercase', 
               fontWeight: 'bold' 
             }}>

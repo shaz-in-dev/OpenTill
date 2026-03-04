@@ -39,6 +39,7 @@ export default function Root({ userRole }: RootProps) {
   const [diningModeActive, setDiningModeActive] = useState(false); 
   const [selectedTable, setSelectedTable] = useState<string | null>(null); 
   const [currentBranchId, setCurrentBranchId] = useState<string | null>(null); // NEW: Multi-Tenant Branch ID
+  const [isMobileCartOpen, setIsMobileCartOpen] = useState(false); // NEW: Responsive Mobile Cart Toggle
 
   // --- NEW: Notification State ---
   const [notification, setNotification] = useState<string | null>(null);
@@ -471,10 +472,31 @@ export default function Root({ userRole }: RootProps) {
           <ProductGrid key={refreshKey} onAddToCart={addToCart} branchId={currentBranchId} />
         </div>
 
-        <div className="sidebar-section">
+        {!isMobileCartOpen && (
+          <div 
+            className="mobile-cart-toggle" 
+            onClick={() => setIsMobileCartOpen(!isMobileCartOpen)}
+          >
+            <ShoppingBag size={24} />
+            <div className="badge">{cart.reduce((sum, i) => sum + i.quantity, 0)}</div>
+          </div>
+        )}
+
+        {isMobileCartOpen && (
+          <div className="mobile-backdrop" onClick={() => setIsMobileCartOpen(false)}></div>
+        )}
+
+        <div className={`sidebar-section ${isMobileCartOpen ? 'open' : ''}`}>
+          <div className="mobile-cart-header">
+            <h3>Current Order</h3>
+            <button onClick={() => setIsMobileCartOpen(false)}>×</button>
+          </div>
           <CartSidebar
             cartItems={cart}
-            onCheckout={handleInitiateCheckout}
+            onCheckout={() => {
+              setShowPayment(true);
+              setIsMobileCartOpen(false);
+            }}
             onRemoveFromCart={removeFromCart}
             discountPercentage={discountPercentage}
             onSetDiscount={setDiscountPercentage}

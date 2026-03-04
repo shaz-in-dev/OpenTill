@@ -134,7 +134,8 @@ function App() {
                  ⚙️ Dashboard
                </a>
             )}
-            <button () => setShowSettings(true)}
+            <button 
+              onClick={() => setShowSettings(true)}
               style={{
                 background: 'transparent',
                 border: '1px solid #666',
@@ -149,12 +150,10 @@ function App() {
               🌐
             </button>
             <button 
-              onClick={
               onClick={handleLogout}
               style={{ 
                 background: 'transparent', 
                 border: '1px solid #444', 
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
                 color: '#ff6b6b', 
                 cursor: 'pointer', 
                 fontSize: '13px',
@@ -170,6 +169,7 @@ function App() {
       </div>
 
       <Root userRole={userRole || 'cashier'} />
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </div>
   )
 }

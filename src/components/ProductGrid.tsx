@@ -157,18 +157,12 @@ export default function ProductGrid({ onAddToCart, branchId }: Props) {
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
+              className={`category-filter-btn ${selectedCategory === cat ? 'active' : ''}`}
               style={{
-                padding: '10px 25px',
-                borderRadius: '30px',
-                border: 'none',
-                cursor: 'pointer',
-                background: selectedCategory === cat ? (cat === 'All' ? 'black' : getCategoryColor(cat)) : 'white',
-                color: selectedCategory === cat ? 'white' : 'black',
-                fontWeight: 'bold',
-                boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-                whiteSpace: 'nowrap',
-                fontSize: '0.9rem',
-                transition: '0.2s'
+                // Overriding background only if active and not All/Uncat to show category color
+                background: selectedCategory === cat && cat !== 'All' ? getCategoryColor(cat) : undefined,
+                borderColor: selectedCategory === cat && cat !== 'All' ? getCategoryColor(cat) : undefined,
+                color: selectedCategory === cat && cat !== 'All' ? '#fff' : undefined
               }}
             >
               {cat === "All" ? t('all') : cat === "Uncategorized" ? t('uncategorized') : cat}
@@ -178,44 +172,23 @@ export default function ProductGrid({ onAddToCart, branchId }: Props) {
       </div>
 
       {/* --- PRODUCT TILES GRID --- */}
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', 
-        gap: '15px',
-        alignContent: 'start',
-        overflowY: 'auto'
-      }}>
+      <div className="product-grid">
         {filteredProducts.length === 0 ? (
-          <p style={{ color: '#888', fontStyle: 'italic', gridColumn: '1/-1' }}>No products found.</p>
+          <p style={{ color: 'var(--text-secondary)', fontStyle: 'italic', gridColumn: '1/-1' }}>No products found.</p>
         ) : (
           filteredProducts.map((product) => (
-            <div key={product.id} style={{ 
-              background: 'white', 
-              borderRadius: '12px', 
-              boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-              overflow: 'hidden',
-              display: 'flex', 
-              flexDirection: 'column', 
-              height: '100%',
-              minHeight: '160px',
-              border: '1px solid #eee'
-            }}>
+            <div key={product.id} className="product-card">
               
               {/* Category Color Strip */}
-              <div style={{ height: '8px', width: '100%', backgroundColor: getCategoryColor(product.category) }}></div>
+              <div style={{ height: '6px', width: '100%', backgroundColor: getCategoryColor(product.category) }}></div>
 
-              <div style={{ padding: '15px', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem', fontWeight: '800', color: '#222' }}>
-                  {product.name}
-                </h3>
+              <div className="product-card-content">
+                <h3>{product.name}</h3>
 
-                <div style={{ 
-                  fontSize: '0.75rem', 
-                  color: getCategoryColor(product.category), 
-                  fontWeight: 'bold', 
-                  textTransform: 'uppercase', 
-                  marginBottom: '15px'
-                }}>
+                <div 
+                  className="product-category"
+                  style={{ color: getCategoryColor(product.category) }}
+                >
                   {product.category}
                 </div>
                 
@@ -231,29 +204,21 @@ export default function ProductGrid({ onAddToCart, branchId }: Props) {
                         key={variant.id}
                         disabled={isOutOfStock}
                         onClick={() => handleProductClick(product, variant)}
+                        className="variant-btn"
                         style={{
-                          width: '100%',
-                          padding: '12px',
-                          background: isOutOfStock ? '#f5f5f5' : '#fff',
-                          color: isOutOfStock ? '#aaa' : '#333',
-                          border: isOutOfStock ? '1px solid #eee' : `1px solid ${getCategoryColor(product.category)}40`,
-                          borderRadius: '8px',
-                          cursor: isOutOfStock ? 'not-allowed' : 'pointer',
-                          display: 'flex', 
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          transition: '0.1s'
+                           // Keep the subtle category border tint if desired, otherwise rely on CSS
+                           borderColor: !isOutOfStock ? `${getCategoryColor(product.category)}40` : undefined
                         }}
                       >
                         <div style={{ textAlign: 'left' }}>
                           <div style={{ fontSize: '0.9rem', fontWeight: '600' }}>
-                            {variant.name === 'Standard' ? 'Add' : variant.name}
+                            {variant.name === 'Standard' ? t('add_item') : variant.name}
                           </div>
-                          {/* STOCK INDICATOR MERGED FROM VERSION 1 */}
+                          {/* STOCK INDICATOR */}
                           {variant.track_stock && !isOutOfStock && (
                             <div style={{ 
                               fontSize: '0.7rem', 
-                              color: variant.stock_quantity < 5 ? '#d32f2f' : '#85ad4e', 
+                              color: variant.stock_quantity < 5 ? 'var(--danger-color)' : 'var(--success-color)', 
                               fontWeight: 'bold' 
                             }}>
                               {variant.stock_quantity} left
