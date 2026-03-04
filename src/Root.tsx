@@ -7,8 +7,10 @@ import CartSidebar from './components/CartSidebar';
 import ReceiptModal from './components/ReceiptModal';
 import PaymentModal from './components/PaymentModal';
 import TableSelection from './components/TableSelection'; 
+import StaffClockInModal from './components/StaffClockInModal'; // NEW: Staff Clock In
 import { deductIngredients } from './utils/inventory';
 import './App.css';
+
 
 // Type definition for items in the cart
 export interface CartItem {
@@ -41,8 +43,11 @@ export default function Root({ userRole }: RootProps) {
   const [currentBranchId, setCurrentBranchId] = useState<string | null>(null); // NEW: Multi-Tenant Branch ID
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false); // NEW: Responsive Mobile Cart Toggle
 
+  const [showClockIn, setShowClockIn] = useState(false); // NEW: Show Clock In Modal
+
   // --- NEW: Notification State ---
   const [notification, setNotification] = useState<string | null>(null);
+
 
   // --- 1. Load Settings and Persistent Cart ---
   useEffect(() => {
@@ -302,16 +307,34 @@ export default function Root({ userRole }: RootProps) {
   };
 
   // --- 5. Confirm Payment & Clear Table Persistence ---
-  const handleConfirmPayment = async (method: 'CASH' | 'CARD', tipAmount: number) => {
+  const handleConfirmPayment = async (method: string, tipAmount: number, customerId?: string) => {
     setShowPayment(false);
     const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const discountAmount = Math.round(subtotal * (discountPercentage / 100));
     const totalAmount = subtotal - discountAmount + tipAmount;
 
+    // --- GIFT CARD LOGIC START ---
+    let giftCardCode = "";
+    if (method.startsWith('GIFT_CARD:')) {
+        giftCardCode = method.split(':')[1];
+        // 1. Process Payment First (Secure Funds)
+        const { error: gcError } = await supabase.rpc('process_gift_card_payment', {
+            card_code_input: giftCardCode,
+            amount_input: totalAmount / 100, // Convert cents to dollars/unit
+            order_id_input: 'PENDING'
+        });
+
+        if (gcError) {
+            alert("Gift Card Payment Failed: " + gcError.message);
+            return;
+        }
+    }
+    // --- GIFT CARD LOGIC END ---
+
     const payload = {
-      branchId: currentBranchId, // NEW: Context passed for multi-unit stock tracking
+      branchId: currentBranchId, 
       totalAmount: totalAmount,
-      paymentMethod: method,
+      paymentMethod: method.startsWith('GIFT_CARD') ? 'GIFT_CARD' : method,
       items: cart.map((item) => ({
         id: item.id,
         name: item.name,
@@ -325,7 +348,29 @@ export default function Root({ userRole }: RootProps) {
 
     if (error) {
       alert("Transaction Failed!");
+      // TODO: Logic to refund Gift Card if order creation fails
     } else {
+      // HANDLE LOYALTY update
+      if (customerId && data?.order_id) {
+         // Link order to customer
+         await supabase.from('orders').update({ customer_id: customerId }).eq('id', data.order_id);
+         
+         // Calculate points (e.g. 1 point per $1/£1 spent)
+         // totalAmount is in cents, so divide by 100
+         const pointsEarned = Math.floor(totalAmount / 100);
+         
+         // Update customer stats
+         // We use an RPC or raw query ideally to be atomic, but read-update-write is okay for now
+         const { data: cust } = await supabase.from('customers').select('loyalty_points, total_spend').eq('id', customerId).single();
+         if (cust) {
+            await supabase.from('customers').update({
+                loyalty_points: (cust.loyalty_points || 0) + pointsEarned,
+                total_spend: (cust.total_spend || 0) + totalAmount,
+                last_visit: new Date().toISOString()
+            }).eq('id', customerId);
+         }
+      }
+
       // DEDUCT INGREDIENTS
       const ingredientItems = cart.map(item => ({ variant_id: item.id, quantity: item.quantity }));
       deductIngredients(ingredientItems);
@@ -410,6 +455,27 @@ export default function Root({ userRole }: RootProps) {
         </div>
 
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+            {/* Staff Clock In */}
+            <button 
+              onClick={() => setShowClockIn(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'rgba(255,255,255,0.1)',
+                border: 'none',
+                padding: '6px 12px',
+                color: 'white',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                fontSize: '0.85rem'
+              }}
+            >
+              <User size={16} />
+              Clock In
+            </button>
+
            {/* Language Switcher */}
            <button 
             onClick={() => i18n.changeLanguage(i18n.language === 'en' ? 'es' : 'en')}
@@ -564,6 +630,9 @@ export default function Root({ userRole }: RootProps) {
           </button>
         </div>
       )}
+
+      {/* NEW: Staff Clock In Overlay */}
+      {showClockIn && <StaffClockInModal onClose={() => setShowClockIn(false)} />}
     </div>
   );
 }

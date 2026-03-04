@@ -4,6 +4,8 @@ import ReceiptModal from './components/ReceiptModal'
 import InventoryManager from './components/InventoryManager'
 import SupplyChain from './components/SupplyChain'
 import ModifierManager from './components/ModifierManager'
+import CrmDashboard from './components/CrmDashboard'
+import GiftCardManager from './components/GiftCardManager' // New: Gift Cards Import
 import { convertToCSV } from './utils/exporter'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from './contexts/ThemeContext'
@@ -23,6 +25,7 @@ export default function AdminDashboard() {
   
   const [diningMode, setDiningMode] = useState(false)
   const [kitchenMode, setKitchenMode] = useState(false) // New: KDS Toggle State
+  const [crmActive, setCrmActive] = useState(false) // New: CRM & Loyalty Toggle State
 
   // NEW: Store Config
   const [storeName, setStoreName] = useState('OpenTill Coffee')
@@ -30,6 +33,7 @@ export default function AdminDashboard() {
   const [taxRate, setTaxRate] = useState(10)
   const [currency, setCurrency] = useState('$')
   const [totalProfit, setTotalProfit] = useState(0);
+  const [totalLaborCost, setTotalLaborCost] = useState(0); // NEW: Labor Cost State
 
   // State for the Receipt Modal
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<any>(null)
@@ -80,6 +84,9 @@ export default function AdminDashboard() {
 
     const { data: kitchenData } = await supabase.from('settings').select('*').eq('key', 'kitchen_display_active').single()
     if (kitchenData) setKitchenMode(kitchenData.value)
+
+    const { data: crmData } = await supabase.from('settings').select('*').eq('key', 'crm_enabled').single()
+    if (crmData) setCrmActive(crmData.value === 'true')
 
     const { data: storeData } = await supabase.from('settings').select('*').in('key', ['store_name', 'store_address', 'tax_rate', 'currency'])
     
@@ -168,6 +175,30 @@ export default function AdminDashboard() {
 
       setStaffPerformance(Object.entries(staffSales).map(([name, total]) => ({ name, total })).sort((a,b) => b.total - a.total));
     }
+
+    // --- FETCH LABOR COST ---
+    // Fetch shifts that started on this day
+    const { data: shifts } = await supabase
+      .from('shifts')
+      .select('total_pay, clock_in, clock_out, hourly_rate') // Assuming existing schema
+      .gte('clock_in', start)
+      .lte('clock_in', end);
+    
+    if (shifts) {
+      // Calculate total pay 
+      // For active shifts (no total_pay yet), we can estimate based on duration so far
+      const cost = shifts.reduce((sum, s) => {
+        if (s.total_pay) return sum + s.total_pay;
+        
+        // Estimate active shift cost
+        if (!s.clock_out && s.clock_in) {
+           const durationHours = (new Date().getTime() - new Date(s.clock_in).getTime()) / (1000 * 60 * 60);
+           return sum + (durationHours * (s.hourly_rate || 15));
+        }
+        return sum;
+      }, 0);
+      setTotalLaborCost(cost);
+    }
   }
 
   const saveSettings = async () => {
@@ -175,6 +206,7 @@ export default function AdminDashboard() {
       { key: 'store_name', value: storeName },
       { key: 'store_address', value: storeAddress },
       { key: 'tax_rate', value: taxRate },
+      { key: 'crm_enabled', value: String(crmActive) },
       { key: 'currency', value: currency },
       { key: 'dining_mode', value: diningMode },
       { key: 'kitchen_display_active', value: kitchenMode }
@@ -401,7 +433,7 @@ export default function AdminDashboard() {
 
       {/* TABS */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '25px', overflowX: 'auto', paddingBottom: '10px' }}>
-        {['products', 'stock', 'purchasing', 'sales', 'analytics', 'bookings', 'staff', 'settings'].map(tab => (
+        {['products', 'stock', 'purchasing', 'sales', 'analytics', 'bookings', 'staff', 'crm', 'giftcards', 'settings'].filter(t => t !== 'crm' || crmActive).map(tab => (
           <button 
             key={tab} 
             onClick={() => setActiveTab(tab)} 
@@ -412,7 +444,7 @@ export default function AdminDashboard() {
               minWidth: '100px'
             }}
           >
-            {t(tab).toUpperCase()}
+            {t(tab) === tab ? tab.toUpperCase() : t(tab).toUpperCase()}
           </button>
         ))}
       </div>
@@ -486,6 +518,18 @@ export default function AdminDashboard() {
                   {currency}{(totalProfit / 100).toFixed(2)}
                 </div>
                 <p style={{ margin: 0, fontSize: '0.8rem', color: '#666' }}>Sales - COGS</p>
+              </div>
+
+              {/* LABOR COST CARD */}
+              <div style={{ padding: '20px', background: '#fce4ec', borderRadius: '12px' }}>
+                <h3 style={{ margin: '0 0 10px 0', color: '#c2185b' }}>Labor Cost</h3>
+                <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#c2185b' }}>
+                  {currency}{totalLaborCost.toFixed(2)}
+                </div>
+                <p style={{ margin: '5px 0 0 0', fontSize: '0.9rem', fontWeight: 'bold', color: '#880e4f' }}>
+                   Net: {currency}{((totalProfit / 100) - totalLaborCost).toFixed(2)}
+                </p>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: '#666' }}>Gross - Labor</p>
               </div>
 
               <div style={{ padding: '20px', background: '#e3f2fd', borderRadius: '12px' }}>
@@ -610,6 +654,12 @@ export default function AdminDashboard() {
             </div>
           </div>
 
+        ) : activeTab === 'crm' ? (
+          <CrmDashboard />
+
+        ) : activeTab === 'giftcards' ? (
+          <GiftCardManager />
+
         ) : activeTab === 'settings' ? (
           <div style={{ padding: '30px', maxWidth: '600px' }}>
             <h2 style={{ marginTop: 0 }}>{t('settings')}</h2>
@@ -710,6 +760,16 @@ export default function AdminDashboard() {
                   style={{ width: '20px', height: '20px', marginRight: '10px' }}
                 />
                 <label htmlFor="kitchenMode">Enable Kitchen Display System (KDS)</label>
+              <div style={{ display: 'flex', alignItems: 'center', marginTop: '15px' }}>
+                <input 
+                  type="checkbox" 
+                  id="crmActive" 
+                  checked={crmActive} 
+                  onChange={e => setCrmActive(e.target.checked)} 
+                  style={{ width: '20px', height: '20px', marginRight: '10px' }}
+                />
+                <label htmlFor="crmActive">Enable CRM & Loyalty Features</label>
+              </div>
               </div>
             </div>
 
