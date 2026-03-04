@@ -48,16 +48,16 @@ Deno.serve(async (req) => {
 
     const cleanItems = payload.items.map((item: any) => {
         const found = variantMap.get(item.name)
-        
-        // Defensive check for price
-        const unitPrice = item.price 
-            ? Math.round(Number(item.price) * 100) 
+
+        // Defensive check for price (Handle 0 for free items)
+        const unitPrice = typeof item.price === 'number'
+            ? Math.round(item.price * 100)
             : (found?.price || 0);
 
         return {
             id: found?.id || null, // Allow null for non-stock items
             name: item.name,
-            price: unitPrice, 
+            price: unitPrice,
             quantity: Number(item.quantity) || 1,
             modifiers: item.modifiers || []
         }
@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
     // 3. Call Atomic RPC
     const rpcPayload = {
         branchId: payload.branch_id || 'a798abd7-2ab8-4419-8bb6-d77bd584a2bf', // Fallback ID
-        totalAmount: payload.total_amount ? Math.round(Number(payload.total_amount) * 100) : 0,
+        totalAmount: typeof payload.total_amount === 'number' ? Math.round(payload.total_amount * 100) : 0,
         paymentMethod: `ONLINE_${String(provider).toUpperCase()}`,
         items: cleanItems,
         customerName: payload.customer_name || 'Delivery Customer',
