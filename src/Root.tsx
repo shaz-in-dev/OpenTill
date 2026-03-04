@@ -395,6 +395,7 @@ export default function Root({ userRole }: RootProps) {
         quantity: item.quantity,
         modifiers: item.modifiers || []
       })),
+      skipKds: !!selectedTable // Skip KDS creation if paying off a dining table bill
     };
 
     const { data, error } = await supabase.rpc('sell_items', { order_payload: payload });
