@@ -1,17 +1,5 @@
 // Follows Deno/Supabase Edge Functions structure
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-
-const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-
-// Optimize client for Edge Functions (no auth persistence)
-const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-    detectSessionInUrl: false,
-  },
-})
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,33 +7,36 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
-  // CORS check
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method Not Allowed. Use POST.' }), { 
-        status: 405, headers: corsHeaders 
-    })
-  }
-
   try {
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+    )
+
     const payload = await req.json()
-    const provider = req.headers.get('x-delivery-provider') || 'generic' // e.g., 'ubereats'
+    const provider = req.get('x-delivery-provider') || 'generic'
 
-    console.log(`Received order from ${provider}`, payload);
+    console.log(`Received order from ${provider}`, payload)
 
-    // 1. Map External Items to Internal Variant IDs (Availability Check)
-    const externalItems = payload.items || []
+    // 1. Validate Payload
+    if (!payload.items || !Array.isArray(payload.items)) {
+        throw new Error("Invalid payload: 'items' array is required")
+    }
+
+    // 2. Prepare items for RPC (Map external IDs to internal variants if possible)
+    // For now, we assume the webhook sends 'name' matching our variants or exact variant_id
+    // Real implementation would look up SKU or External ID map
     
-    // Skip DB lookup if no items
     let variantMap = new Map();
-    if (externalItems.length > 0) {
-        const itemNames = externalItems.map((i: any) => i.name);
-        
-        // Fetch variants by name to get correct UUIDs for stock tracking
-        const { data: variants } = await supabase
+    const itemNames = payload.items.map((i: any) => i.name).filter(Boolean);
+
+    if (itemNames.length > 0) {
+        const { data: variants } = await supabaseClient
             .from('variants')
             .select('id, name, price')
             .in('name', itemNames)
@@ -55,51 +46,48 @@ Deno.serve(async (req) => {
         }
     }
 
-    const mappedItems = externalItems.map((i: any) => {
-        const foundVariant = variantMap.get(i.name)
-        if (!foundVariant) {
-            console.warn(`Item not found in DB: ${i.name}. processing as unlinked item.`);
-        }
+    const cleanItems = payload.items.map((item: any) => {
+        const found = variantMap.get(item.name)
+        
+        // Defensive check for price
+        const unitPrice = item.price 
+            ? Math.round(Number(item.price) * 100) 
+            : (found?.price || 0);
+
         return {
-            id: foundVariant?.id || null, // Will be null if not found (Stock won't deduct, but order proceeds)
-            name: i.name,
-            price: i.price ? Math.round(i.price * 100) : (foundVariant?.price || 0), // Prefer payload price, fallback to DB
-            quantity: i.quantity || 1,
-            modifiers: i.modifiers || []
+            id: found?.id || null, // Allow null for non-stock items
+            name: item.name,
+            price: unitPrice, 
+            quantity: Number(item.quantity) || 1,
+            modifiers: item.modifiers || []
         }
     })
 
-    // 2. Prepare Payload for sell_items RPC
+    // 3. Call Atomic RPC
     const rpcPayload = {
-        branchId: payload.branch_id || 'default',
-        totalAmount: payload.total_amount ? Math.round(payload.total_amount * 100) : 0, 
-        paymentMethod: `ONLINE_${provider.toUpperCase()}`,
-        items: mappedItems
+        branchId: payload.branch_id || 'a798abd7-2ab8-4419-8bb6-d77bd584a2bf', // Fallback ID
+        totalAmount: payload.total_amount ? Math.round(Number(payload.total_amount) * 100) : 0,
+        paymentMethod: `ONLINE_${String(provider).toUpperCase()}`,
+        items: cleanItems,
+        customerName: payload.customer_name || 'Delivery Customer',
+        tableNumber: 'DELIVERY'
     }
 
-    // 3. Execute Transaction
-    const { data: rpcData, error: rpcError } = await supabase.rpc('sell_items', { 
-        order_payload: rpcPayload 
-    });
+    const { data, error } = await supabaseClient.rpc('sell_items', {
+        order_payload: rpcPayload
+    })
 
-    if (rpcError) {
-        console.error("RPC Error:", rpcError);
-        throw new Error(`Transaction Failed: ${rpcError.message}`);
-    }
+    if (error) throw error
 
-    return new Response(JSON.stringify({ 
-        success: true, 
-        order_id: rpcData, 
-        message: `Order processed successfully from ${provider}` 
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return new Response(JSON.stringify(data), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
 
   } catch (error) {
-    console.error("Webhook Error:", error)
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const err = error as Error
+    return new Response(JSON.stringify({ error: err.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
     })
   }
