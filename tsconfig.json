@@ -42,6 +42,6 @@
     "moduleDetection": "force",
     "skipLibCheck": true
   },
-  "include": ["src/*", "tests/*", "vite.config.ts"],
+  "include": ["src/**/*", "tests/**/*", "vite.config.ts"],
   "exclude": ["node_modules", "supabase/functions", "win32-x64-template-6DR9tv", "dist"]
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useTranslation } from 'react-i18next'; // NEW: i18n
-import { Globe, ShoppingCart, User, X, ShoppingBag, WifiOff } from 'lucide-react'; // NEW: Icons for versatility
+import { useTranslation } from 'react-i18next';
+import { Globe, ShoppingCart, User, X, ShoppingBag, WifiOff, PauseCircle, PlayCircle, Clock, Star, History, StickyNote, PlusCircle } from 'lucide-react';
 import { useNetworkStatus } from './hooks/useNetworkStatus'
 import { saveOfflineOrder, saveOfflineKitchenTicket } from './utils/offlineDb'
 import { supabase } from './supabaseClient';
@@ -9,7 +9,8 @@ import CartSidebar from './components/CartSidebar';
 import ReceiptModal from './components/ReceiptModal';
 import PaymentModal from './components/PaymentModal';
 import TableSelection from './components/TableSelection'; 
-import StaffClockInModal from './components/StaffClockInModal'; // NEW: Staff Clock In
+import StaffClockInModal from './components/StaffClockInModal';
+import OrderHistoryDrawer from './components/OrderHistoryDrawerEntry';
 import { deductIngredients } from './utils/inventory';
 import './App.css';
 
@@ -22,7 +23,21 @@ export interface CartItem {
   quantity: number;
   modifiers?: any[];
   status?: string;
+  note?: string;
 }
+
+// Held/Parked order interface
+export interface HeldOrder {
+  id: string;
+  label: string;
+  items: CartItem[];
+  discountPercentage: number;
+  orderType: string;
+  orderNote: string;
+  heldAt: string;
+}
+
+export type OrderType = 'dine_in' | 'takeaway' | 'delivery';
 
 interface RootProps {
   userRole: string;
@@ -48,16 +63,43 @@ export default function Root({ userRole }: RootProps) {
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false); // NEW: Responsive Mobile Cart Toggle
   const [taxRate, setTaxRate] = useState(0); // NEW: Tax Rate for Calculation
 
-  const [showClockIn, setShowClockIn] = useState(false); // NEW: Show Clock In Modal
+  const [showClockIn, setShowClockIn] = useState(false);
 
-  // --- NEW: Notification State ---
+  // --- Notification State ---
   const [notification, setNotification] = useState<string | null>(null);
+
+  // --- Feature 1: Order Notes ---
+  const [orderNote, setOrderNote] = useState('');
+
+  // --- Feature 2: Hold/Park Orders ---
+  const [heldOrders, setHeldOrders] = useState<HeldOrder[]>([]);
+  const [showHeldOrders, setShowHeldOrders] = useState(false);
+
+  // --- Feature 5: Order Type ---
+  const [orderType, setOrderType] = useState<OrderType>('dine_in');
+
+  // --- Feature 8: Reprint Last Receipt ---
+  const [canReprintLast, setCanReprintLast] = useState(false);
+
+  // --- Feature 13: Daily Sales Widget ---
+  const [dailySalesTotal, setDailySalesTotal] = useState(0);
+  const [dailyOrderCount, setDailyOrderCount] = useState(0);
+
+  // --- Feature 15: Order History Drawer ---
+  const [showOrderHistory, setShowOrderHistory] = useState(false);
+
+  // --- Feature 7: Open/Custom Item ---
+  const [showOpenItem, setShowOpenItem] = useState(false);
+  const [openItemName, setOpenItemName] = useState('');
+  const [openItemPrice, setOpenItemPrice] = useState('');
 
 
   // --- 1. Load Settings and Persistent Cart ---
   useEffect(() => {
     fetchDiningMode();
-    fetchBranchContext(); // NEW: Fetch Branch
+    fetchBranchContext();
+    fetchDailySales();
+    loadHeldOrders();
   }, []);
 
   // --- NEW: Multi-Tenant Context Loader ---
@@ -127,8 +169,133 @@ export default function Root({ userRole }: RootProps) {
         price: item.price_at_addition,
         quantity: item.quantity,
         status: item.status,
-        modifiers: item.modifiers || [] // FIX: Ensure modifiers are loaded
+        modifiers: item.modifiers || [],
+        note: item.note || ''
       })));
+    }
+  };
+
+  // --- Feature 13: Daily Sales Widget ---
+  const fetchDailySales = async () => {
+    const today = new Date().toISOString().split('T')[0];
+    const { data, count } = await supabase
+      .from('orders')
+      .select('total_amount', { count: 'exact' })
+      .gte('created_at', `${today}T00:00:00`)
+      .lte('created_at', `${today}T23:59:59`)
+      .neq('status', 'VOIDED');
+    if (data) {
+      setDailySalesTotal(data.reduce((sum, o) => sum + (o.total_amount || 0), 0));
+      setDailyOrderCount(count || 0);
+    }
+  };
+
+  // --- Feature 2: Hold/Park Order ---
+  const loadHeldOrders = () => {
+    try {
+      const saved = localStorage.getItem('opentill_held_orders');
+      if (saved) setHeldOrders(JSON.parse(saved));
+    } catch { /* noop */ }
+  };
+
+  const holdCurrentOrder = () => {
+    if (cart.length === 0) return alert(t('empty_cart'));
+    const held: HeldOrder = {
+      id: crypto.randomUUID(),
+      label: selectedTable ? `Table ${selectedTable}` : `Order #${heldOrders.length + 1}`,
+      items: [...cart],
+      discountPercentage,
+      orderType,
+      orderNote,
+      heldAt: new Date().toISOString(),
+    };
+    const updated = [...heldOrders, held];
+    setHeldOrders(updated);
+    localStorage.setItem('opentill_held_orders', JSON.stringify(updated));
+    setCart([]);
+    setDiscountPercentage(0);
+    setOrderNote('');
+    setNotification(t('order_held'));
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  const recallHeldOrder = (id: string) => {
+    const order = heldOrders.find(o => o.id === id);
+    if (!order) return;
+    if (cart.length > 0 && !confirm(t('recall_confirm'))) return;
+    setCart(order.items);
+    setDiscountPercentage(order.discountPercentage);
+    setOrderType(order.orderType as OrderType);
+    setOrderNote(order.orderNote);
+    const updated = heldOrders.filter(o => o.id !== id);
+    setHeldOrders(updated);
+    localStorage.setItem('opentill_held_orders', JSON.stringify(updated));
+    setShowHeldOrders(false);
+  };
+
+  const deleteHeldOrder = (id: string) => {
+    const updated = heldOrders.filter(o => o.id !== id);
+    setHeldOrders(updated);
+    localStorage.setItem('opentill_held_orders', JSON.stringify(updated));
+  };
+
+  // --- Feature 7: Open/Custom Item ---
+  const addOpenItem = () => {
+    const price = Math.round(parseFloat(openItemPrice) * 100);
+    if (!openItemName || isNaN(price) || price <= 0) return alert('Enter valid name and price');
+    const item: CartItem = {
+      id: `open-${crypto.randomUUID()}`,
+      name: openItemName,
+      price,
+      quantity: 1,
+      modifiers: [],
+      note: '',
+    };
+    setCart(prev => [...prev, item]);
+    setOpenItemName('');
+    setOpenItemPrice('');
+    setShowOpenItem(false);
+  };
+
+  // --- Feature 1: Update Item Note ---
+  const updateItemNote = async (itemId: string, itemName: string, note: string) => {
+    setCart(prev => prev.map(item =>
+      item.id === itemId && item.name === itemName ? { ...item, note } : item
+    ));
+
+    if (diningModeActive && selectedTable) {
+      await supabase
+        .from('table_cart_items')
+        .update({ note })
+        .eq('table_number', selectedTable)
+        .eq('branch_id', currentBranchId)
+        .eq('variant_id', itemId)
+        .eq('product_name', itemName)
+        .eq('status', 'DRAFT');
+    }
+  };
+
+  // --- Feature 3: Quantity Adjustment ---
+  const incrementCartItem = async (variantId: string, productName?: string) => {
+    if (diningModeActive && selectedTable) {
+      const { data: existing } = await supabase
+        .from('table_cart_items')
+        .select('*')
+        .eq('table_number', selectedTable)
+        .eq('branch_id', currentBranchId)
+        .eq('variant_id', variantId)
+        .eq('product_name', productName || '')
+        .eq('status', 'DRAFT')
+        .single();
+      if (existing) {
+        await supabase.from('table_cart_items').update({ quantity: existing.quantity + 1 }).eq('id', existing.id);
+      }
+      loadTableCart();
+    } else {
+      setCart(prev => prev.map(item =>
+        item.id === variantId && (productName ? item.name === productName : true)
+          ? { ...item, quantity: item.quantity + 1 } : item
+      ));
     }
   };
 
@@ -185,10 +352,15 @@ export default function Root({ userRole }: RootProps) {
           price_at_addition: variant.price,
           quantity: 1,
           status: 'DRAFT',
-          modifiers: modifiers
+          modifiers: modifiers,
+          note: ''
         });
         
-        await supabase.from('dining_tables').update({ status: 'OCCUPIED' }).eq('table_number', selectedTable);
+        await supabase
+          .from('dining_tables')
+          .update({ status: 'OCCUPIED' })
+          .eq('table_number', selectedTable)
+          .eq('branch_id', currentBranchId);
       }
       loadTableCart(); 
     } else {
@@ -300,7 +472,12 @@ export default function Root({ userRole }: RootProps) {
     if (activeTicket) {
       const mergedItems = [
         ...activeTicket.items,
-        ...draftItems.map(i => ({ name: i.product_name, qty: i.quantity, status: 'PENDING' }))
+        ...draftItems.map(i => ({
+          name: i.product_name,
+          qty: i.quantity,
+          status: 'PENDING',
+          note: i.note || ''
+        }))
       ];
       await supabase.from('kitchen_tickets').update({ items: mergedItems }).eq('id', activeTicket.id);
     } else {
@@ -308,7 +485,12 @@ export default function Root({ userRole }: RootProps) {
       const { error: ticketError } = await supabase.from('kitchen_tickets').insert({
         branch_id: currentBranchId,
         table_number: selectedTable,
-        items: draftItems.map(i => ({ name: i.product_name, qty: i.quantity, status: 'PENDING' })),
+        items: draftItems.map(i => ({
+          name: i.product_name,
+          qty: i.quantity,
+          status: 'PENDING',
+          note: i.note || ''
+        })),
         status: 'PENDING'
       });
       if (ticketError) return alert("Kitchen Routing Failed: " + ticketError.message);
@@ -460,14 +642,17 @@ export default function Root({ userRole }: RootProps) {
       userId: user?.id,
       totalAmount: totalAmount,
       paymentMethod: method.startsWith('GIFT_CARD') ? 'GIFT_CARD' : method,
+      orderType: orderType,
+      orderNote: orderNote,
       items: cart.map((item) => ({
         id: item.id,
         name: item.name,
         price: item.price,
         quantity: item.quantity,
-        modifiers: item.modifiers || []
+        modifiers: item.modifiers || [],
+        note: item.note || ''
       })),
-      skipKds: !!selectedTable // Skip KDS creation if paying off a dining table bill
+      skipKds: !!selectedTable
     };
 
     const { data, error } = await supabase.rpc('sell_items', { order_payload: payload });
@@ -515,10 +700,15 @@ export default function Root({ userRole }: RootProps) {
         total: totalAmount,
         items: [...cart],
         method: method,
+        orderType: orderType,
+        orderNote: orderNote,
       });
 
       setCart([]);
       setDiscountPercentage(0);
+      setOrderNote('');
+      setCanReprintLast(true);
+      fetchDailySales();
       // setSelectedTable(null); // Commented out to prevent immediate redirect
       setShowReceipt(true);
     }
@@ -581,41 +771,62 @@ export default function Root({ userRole }: RootProps) {
         </div>
 
         <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+            {/* Feature 13: Daily Sales Widget */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(46,125,50,0.3)', padding: '4px 12px', borderRadius: '6px', fontSize: '0.8rem' }}>
+              <span style={{ color: '#81c784' }}>{dailyOrderCount} orders</span>
+              <span style={{ color: '#a5d6a7', fontWeight: 'bold' }}>${(dailySalesTotal / 100).toFixed(2)}</span>
+            </div>
+
+            {/* Feature 2: Hold/Park Order */}
+            <button
+              onClick={holdCurrentOrder}
+              style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.1)', border: 'none', padding: '6px 10px', color: '#ffb74d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem' }}
+            >
+              <PauseCircle size={16} />
+              {t('hold')}
+            </button>
+
+            {heldOrders.length > 0 && (
+              <button
+                onClick={() => setShowHeldOrders(!showHeldOrders)}
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#ff9800', border: 'none', padding: '6px 10px', color: 'white', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem', position: 'relative' }}
+              >
+                <PlayCircle size={16} />
+                {t('recall')} ({heldOrders.length})
+              </button>
+            )}
+
+            {/* Feature 15: Order History */}
+            <button
+              onClick={() => setShowOrderHistory(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.1)', border: 'none', padding: '6px 10px', color: 'white', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
+            >
+              <History size={16} />
+            </button>
+
+            {/* Feature 8: Reprint last receipt */}
+            {canReprintLast && lastOrder && (
+              <button
+                onClick={() => setShowReceipt(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.1)', border: 'none', padding: '6px 10px', color: '#90caf9', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
+              >
+                🖨️ {t('reprint')}
+              </button>
+            )}
+
             {/* Staff Clock In */}
             <button 
               onClick={() => setShowClockIn(true)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                background: 'rgba(255,255,255,0.1)',
-                border: 'none',
-                padding: '6px 12px',
-                color: 'white',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontWeight: 'bold',
-                fontSize: '0.85rem'
-              }}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.1)', border: 'none', padding: '6px 12px', color: 'white', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
             >
               <User size={16} />
-              Clock In
+              {t('clock_in')}
             </button>
 
            {/* Language Switcher */}
            <button 
             onClick={() => i18n.changeLanguage(i18n.language === 'en' ? 'es' : 'en')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: 'transparent',
-              border: '1px solid #555',
-              padding: '6px 12px',
-              color: 'white',
-              borderRadius: '6px',
-              cursor: 'pointer'
-            }}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'transparent', border: '1px solid #555', padding: '6px 12px', color: 'white', borderRadius: '6px', cursor: 'pointer' }}
           >
             <Globe size={16} />
             {i18n.language.toUpperCase()}
@@ -661,6 +872,43 @@ export default function Root({ userRole }: RootProps) {
             </div>
           )}
 
+          {/* Feature 5: Order Type & Feature 7: Open Item */}
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '4px', background: '#f5f5f5', padding: '3px', borderRadius: '8px' }}>
+              {(['dine_in', 'takeaway', 'delivery'] as OrderType[]).map(type => (
+                <button
+                  key={type}
+                  onClick={() => setOrderType(type)}
+                  style={{
+                    padding: '6px 14px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600', fontSize: '0.8rem',
+                    background: orderType === type ? '#1a1a1a' : 'transparent',
+                    color: orderType === type ? '#fff' : '#666',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {type === 'dine_in' ? '🍽️' : type === 'takeaway' ? '🥡' : '🚚'} {t(type)}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setShowOpenItem(!showOpenItem)}
+              style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', border: '1px dashed #aaa', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontSize: '0.8rem', color: '#555' }}
+            >
+              <PlusCircle size={14} />
+              {t('open_item')}
+            </button>
+          </div>
+
+          {/* Feature 7: Open Item Form */}
+          {showOpenItem && (
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '15px', padding: '12px', background: '#fff8e1', borderRadius: '8px', border: '1px solid #ffe082', alignItems: 'center' }}>
+              <input placeholder={t('item_name')} value={openItemName} onChange={e => setOpenItemName(e.target.value)} style={{ flex: 2, padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }} />
+              <input type="number" step="0.01" placeholder={t('price')} value={openItemPrice} onChange={e => setOpenItemPrice(e.target.value)} style={{ flex: 1, padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }} />
+              <button onClick={addOpenItem} style={{ padding: '8px 16px', background: '#333', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>+ {t('add_item')}</button>
+            </div>
+          )}
+
           <ProductGrid key={refreshKey} onAddToCart={addToCart} branchId={currentBranchId} />
         </div>
 
@@ -690,12 +938,17 @@ export default function Root({ userRole }: RootProps) {
               setIsMobileCartOpen(false);
             }}
             onRemoveFromCart={removeFromCart}
+            onIncrementItem={incrementCartItem}
+            onUpdateItemNote={updateItemNote}
             discountPercentage={discountPercentage}
             onSetDiscount={setDiscountPercentage}
             onSendToKitchen={handleSendToKitchen} 
             isDiningMode={diningModeActive} 
             t={t} 
-            taxRate={taxRate} // FIX: Pass Tax Rate
+            taxRate={taxRate}
+            orderNote={orderNote}
+            onSetOrderNote={setOrderNote}
+            orderType={orderType}
           />
         </div>
       </div>
@@ -721,6 +974,8 @@ export default function Root({ userRole }: RootProps) {
           total={lastOrder.total}
           paymentMethod={lastOrder.method}
           items={lastOrder.items}
+          orderNote={lastOrder.orderNote}
+          orderType={lastOrder.orderType}
           onClose={() => {
             setShowReceipt(false);
             // Trigger refresh to update stock counts in ProductGrid
@@ -759,8 +1014,40 @@ export default function Root({ userRole }: RootProps) {
         </div>
       )}
 
-      {/* NEW: Staff Clock In Overlay */}
+      {/* Staff Clock In Overlay */}
       {showClockIn && <StaffClockInModal onClose={() => setShowClockIn(false)} />}
+
+      {/* Feature 2: Held Orders Popup */}
+      {showHeldOrders && (
+        <div className="modal-overlay" onClick={() => setShowHeldOrders(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px', width: '90%' }}>
+            <div className="modal-header" style={{ borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '15px' }}>
+              <h2 style={{ margin: 0 }}>⏸️ {t('held_orders')}</h2>
+              <button onClick={() => setShowHeldOrders(false)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer' }}>×</button>
+            </div>
+            {heldOrders.length === 0 ? (
+              <p style={{ color: '#888', textAlign: 'center', padding: '30px' }}>{t('no_held_orders')}</p>
+            ) : (
+              heldOrders.map(order => (
+                <div key={order.id} style={{ padding: '12px', marginBottom: '10px', border: '1px solid #eee', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: 'bold' }}>{order.label}</div>
+                    <div style={{ fontSize: '0.8rem', color: '#888' }}>{order.items.length} items - {new Date(order.heldAt).toLocaleTimeString()}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#aaa' }}>${(order.items.reduce((s, i) => s + i.price * i.quantity, 0) / 100).toFixed(2)}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => recallHeldOrder(order.id)} style={{ padding: '8px 14px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{t('recall')}</button>
+                    <button onClick={() => deleteHeldOrder(order.id)} style={{ padding: '8px 14px', background: '#ffebee', color: '#d32f2f', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>✕</button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Feature 15: Order History Drawer */}
+      {showOrderHistory && <OrderHistoryDrawer onClose={() => setShowOrderHistory(false)} branchId={currentBranchId} />}
     </div>
   );
 }

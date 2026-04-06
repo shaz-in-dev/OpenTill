@@ -5,7 +5,7 @@ import { db } from '../utils/offlineDb'; // Offline Support
 interface KitchenTicket {
   id: number;
   table_number: string;
-  items: { name: string; qty: number; modifiers?: any[]; void?: boolean; status?: 'PENDING' | 'READY' }[]; 
+  items: { name: string; qty: number; modifiers?: any[]; note?: string; void?: boolean; status?: 'PENDING' | 'READY' }[]; 
   status: 'PENDING' | 'COMPLETED' | 'VOIDED';
   created_at: string;
   is_offline?: boolean; // Use to differentiate
@@ -205,8 +205,17 @@ export default function KitchenDisplay() {
                         opacity: item.status === 'READY' ? 0.6 : 1
                       }}
                     >
-                      <span style={itemQty}>{item.qty}x</span>
-                      <span style={itemName}>{item.name}</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={itemQty}>{item.qty}x</span>
+                          <span style={itemName}>{item.name}</span>
+                        </div>
+                        {item.note && (
+                          <span style={{ fontSize: '0.8rem', color: '#ffcc80', fontStyle: 'italic', paddingLeft: '36px' }}>
+                            NOTE: {item.note}
+                          </span>
+                        )}
+                      </div>
                       {item.status === 'READY' && <span style={{fontSize: '0.7rem', color: '#85ad4e', marginLeft: 'auto'}}>READY</span>}
                       {(item.void || isVoidedTicket) && <span style={voidTag}>VOID</span>}
                     </div>
