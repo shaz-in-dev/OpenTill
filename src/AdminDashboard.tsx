@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from './supabaseClient'
 import ReceiptModal from './components/ReceiptModal'
 import InventoryManager from './components/InventoryManager'
@@ -20,7 +20,9 @@ export default function AdminDashboard() {
   const { theme, setTheme } = useTheme() // New: Theme Hook
   const [activeTab, setActiveTab] = useState('products') 
   const [variants, setVariants] = useState<any[]>([])
-  const [orders, setOrders] = useState<any[]>([]) 
+  const [orders, setOrders] = useState<any[]>([])
+  const [ordersPage, setOrdersPage] = useState(0)
+  const [ordersHasMore, setOrdersHasMore] = useState(false)
   const [staff, setStaff] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   
@@ -53,8 +55,10 @@ export default function AdminDashboard() {
   // FORM STATES
   const [newName, setNewName] = useState('')
   const [newCategory, setNewCategory] = useState('Coffee')
-  const [newPrice, setNewPrice] = useState('') 
+  const [newPrice, setNewPrice] = useState('')
   const [newVariantName, setNewVariantName] = useState('Standard')
+  const [newTrackStock, setNewTrackStock] = useState(false)
+  const [newStockQty, setNewStockQty] = useState('0')
   const [newEmail, setNewEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [newRole, setNewRole] = useState('cashier')
@@ -78,16 +82,17 @@ export default function AdminDashboard() {
     else if (activeTab === 'staff') fetchStaff()
     else if (activeTab === 'analytics') fetchAnalytics()
     else if (activeTab === 'bookings') fetchBookings()
-  }, [activeTab, selectedDate]) // Refresh on date change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, selectedDate])
 
   // --- DATA FETCHING ---
   const fetchSettings = async () => {
     // Fetch Dining Mode
     const { data: diningData } = await supabase.from('settings').select('*').eq('key', 'dining_mode').single()
-    if (diningData) setDiningMode(diningData.value)
+    if (diningData) setDiningMode(diningData.value === 'true')
 
     const { data: kitchenData } = await supabase.from('settings').select('*').eq('key', 'kitchen_display_active').single()
-    if (kitchenData) setKitchenMode(kitchenData.value)
+    if (kitchenData) setKitchenMode(kitchenData.value === 'true')
 
     const { data: crmData } = await supabase.from('settings').select('*').eq('key', 'crm_enabled').single()
     if (crmData) setCrmActive(crmData.value === 'true')
@@ -104,21 +109,12 @@ export default function AdminDashboard() {
     }
   }
 
-  const fetchAnalytics = async () => {
-    // 6. 🕒 Timezone Fix: Handling timezone properly without libraries
+  const fetchAnalytics = useCallback(async () => {
     if (!selectedDate) return;
-    
-    // Create Date boundaries accounting for local timezone offset
-    // This creates a date derived from the input (YYYY-MM-DD) which is treated as UTC Midnight by default in JS
-    // BUT we want the query to represent the local day. 
-    // Best practice for simple apps: Send usage of `timezone` modifier in SQL or construct ISO Strings that match local time
-    
-    const start = `${selectedDate}T00:00:00`;
-    const end = `${selectedDate}T23:59:59.999`;
-    
-    // Fetch orders for date range
-    // Supabase/Postgres will interpret these ISO-like strings relative to the session timezone or UTC if 'Z' is missing.
-    // By omitting 'Z', we ask Postgres to assume local time interpretation if configured, or we just accept 'local time' as the stored string.
+    const localStart = new Date(`${selectedDate}T00:00:00`);
+    const localEnd = new Date(`${selectedDate}T23:59:59.999`);
+    const start = localStart.toISOString();
+    const end = localEnd.toISOString();
     
     const { data } = await supabase
       .from('orders')
@@ -215,30 +211,24 @@ export default function AdminDashboard() {
       }, 0);
       setTotalLaborCost(cost);
     }
-  }
+  }, [selectedDate])
 
   const saveSettings = async () => {
     const updates = [
-      { key: 'store_name', value: storeName },
-      { key: 'store_address', value: storeAddress },
-      { key: 'tax_rate', value: taxRate },
+      { key: 'store_name', value: String(storeName) },
+      { key: 'store_address', value: String(storeAddress) },
+      { key: 'tax_rate', value: String(taxRate) },
       { key: 'crm_enabled', value: String(crmActive) },
-      { key: 'currency', value: currency },
-      { key: 'dining_mode', value: diningMode },
-      { key: 'kitchen_display_active', value: kitchenMode }
-    ]
-
-    for (const update of updates) {
-      // Upsert logic (if key exists, update value)
-      const { data: existing } = await supabase.from('settings').select('id').eq('key', update.key).single()
-      
-      if (existing) {
-        await supabase.from('settings').update({ value: update.value }).eq('id', existing.id)
-      } else {
-        await supabase.from('settings').insert(update)
-      }
+      { key: 'currency', value: String(currency) },
+      { key: 'dining_mode', value: String(diningMode) },
+      { key: 'kitchen_display_active', value: String(kitchenMode) }
+    ];
+    const { error } = await supabase.from('settings').upsert(updates, { onConflict: 'key' });
+    if (error) {
+      alert('Failed to save settings: ' + error.message);
+    } else {
+      alert(t('settings_saved'));
     }
-    alert(t('settings_saved'))
   }
 
   const fetchVariants = async () => {
@@ -251,8 +241,11 @@ export default function AdminDashboard() {
     setLoading(false)
   }
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async (page = 0) => {
     setLoading(true)
+    const PAGE_SIZE = 50;
+    const localStart = new Date(`${selectedDate}T00:00:00`);
+    const localEnd = new Date(`${selectedDate}T23:59:59.999`);
     const { data, error } = await supabase
       .from('orders')
       .select(`
@@ -266,12 +259,18 @@ export default function AdminDashboard() {
           variants (name)
         )
       `)
+      .gte('created_at', localStart.toISOString())
+      .lte('created_at', localEnd.toISOString())
       .order('created_at', { ascending: false })
-    
+      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+
     if (error) console.error("Sales Fetch Error:", error)
-    setOrders(data || [])
+    const newOrders = data || [];
+    setOrders(page === 0 ? newOrders : prev => [...prev, ...newOrders]);
+    setOrdersHasMore(newOrders.length === PAGE_SIZE);
+    setOrdersPage(page);
     setLoading(false)
-  }
+  }, [selectedDate])
 
   const fetchStaff = async () => {
     setLoading(true)
@@ -350,6 +349,44 @@ export default function AdminDashboard() {
     fetchOrders();
   };
 
+  // Feature 9: Refund Order
+  const handleRefundOrder = async (order: any) => {
+    const refundReason = prompt("Enter refund reason:");
+    if (!refundReason) return;
+    
+    const { error: updateError } = await supabase
+      .from('orders')
+      .update({ status: 'REFUNDED', refund_reason: refundReason, refunded_at: new Date().toISOString() })
+      .eq('id', order.id);
+
+    if (updateError) return alert("Refund failed: " + updateError.message);
+
+    // Restore stock
+    for (const item of order.order_items) {
+      if (item.variant_id) {
+        const { data: v } = await supabase.from('variants').select('stock_quantity, track_stock').eq('id', item.variant_id).single();
+        if (v?.track_stock) {
+          await supabase.from('variants').update({ stock_quantity: (v.stock_quantity || 0) + item.quantity }).eq('id', item.variant_id);
+        }
+      }
+    }
+
+    // Reverse loyalty points if customer was linked
+    if (order.customer_id) {
+      const pointsToRemove = Math.floor((order.total_amount || 0) / 100);
+      const { data: cust } = await supabase.from('customers').select('loyalty_points, total_spend').eq('id', order.customer_id).single();
+      if (cust) {
+        await supabase.from('customers').update({
+          loyalty_points: Math.max(0, (cust.loyalty_points || 0) - pointsToRemove),
+          total_spend: Math.max(0, (cust.total_spend || 0) - (order.total_amount || 0))
+        }).eq('id', order.customer_id);
+      }
+    }
+
+    alert("Order refunded successfully. Reason: " + refundReason);
+    fetchOrders();
+  };
+
   // --- ANALYTICS & SEARCH LOGIC ---
   const filteredOrders = orders.filter(o => {
     const created = o.created_at ? new Date(o.created_at) : null;
@@ -392,23 +429,25 @@ export default function AdminDashboard() {
     
     let productId;
     const { data: existingProd } = await supabase.from('products').select('id').eq('name', newName).single()
-    
-    if (existingProd) { productId = existingProd.id } 
-    else {
+
+    if (existingProd) {
+      if (!confirm(`A product named "${newName}" already exists. Add this as a new variant to it?`)) return;
+      productId = existingProd.id;
+    } else {
       const { data: pData, error } = await supabase.from('products').insert({ name: newName, category: newCategory }).select().single()
       if (error || !pData) return alert("Product Creation Failed: " + (error?.message || "Unknown error"));
       productId = pData.id
     }
 
-    await supabase.from('variants').insert({ 
-      product_id: productId, 
-      name: newVariantName, 
+    await supabase.from('variants').insert({
+      product_id: productId,
+      name: newVariantName,
       price: Math.round(parseFloat(newPrice) * 100),
-      stock_quantity: 10,
-      track_stock: true 
+      stock_quantity: newTrackStock ? parseInt(newStockQty, 10) || 0 : 0,
+      track_stock: newTrackStock
     })
 
-    setNewName(''); setNewPrice(''); fetchVariants()
+    setNewName(''); setNewPrice(''); setNewStockQty('0'); setNewTrackStock(false); fetchVariants()
   }
 
   const updateVariantField = async (id: string, field: string, value: any) => {
@@ -481,7 +520,7 @@ export default function AdminDashboard() {
               minWidth: '100px'
             }}
           >
-            {t(tab) === tab ? tab.toUpperCase() : t(tab).toUpperCase()}
+            {t(tab).toUpperCase()}
           </button>
         ))}
       </div>
@@ -495,7 +534,24 @@ export default function AdminDashboard() {
             <div style={{ background: '#f8f9fa', padding: '20px', borderRadius: '8px', marginBottom: '25px', border: '1px solid #eee' }}>
               <form onSubmit={handleCreateProduct} style={{ display: 'flex', gap: '15px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                 <div style={{ flex: 2 }}><label style={labelStyle}>Product Name</label><input value={newName} onChange={e => setNewName(e.target.value)} style={inputStyle} /></div>
+                <div style={{ flex: 1 }}>
+                  <label style={labelStyle}>Category</label>
+                  <select value={newCategory} onChange={e => setNewCategory(e.target.value)} style={inputStyle}>
+                    <option>Coffee</option>
+                    <option>Food</option>
+                    <option>Drinks</option>
+                    <option>Snacks</option>
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}><label style={labelStyle}>Variant Name</label><input value={newVariantName} onChange={e => setNewVariantName(e.target.value)} placeholder="e.g. Standard, Large" style={inputStyle} /></div>
                 <div style={{ flex: 1 }}><label style={labelStyle}>Price ($)</label><input type="number" step="0.01" value={newPrice} onChange={e => setNewPrice(e.target.value)} style={inputStyle} /></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input type="checkbox" id="newTrackStock" checked={newTrackStock} onChange={e => setNewTrackStock(e.target.checked)} />
+                  <label htmlFor="newTrackStock" style={{ fontSize: '0.85rem' }}>Track Stock</label>
+                </div>
+                {newTrackStock && (
+                  <div style={{ width: '80px' }}><label style={labelStyle}>Qty</label><input type="number" min="0" value={newStockQty} onChange={e => setNewStockQty(e.target.value)} style={inputStyle} /></div>
+                )}
                 <button type="submit" style={{ padding: '11px 20px', background: '#1b5e20', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>+ Add</button>
               </form>
             </div>
@@ -518,7 +574,7 @@ export default function AdminDashboard() {
                     </td>
                     <td style={tdStyle}>
                       <input type="checkbox" checked={v.track_stock} onChange={(e) => updateVariantField(v.id, 'track_stock', e.target.checked)} />
-                      <input type="number" disabled={!v.track_stock} value={v.stock_quantity} onChange={(e) => updateVariantField(v.id, 'stock_quantity', parseInt(e.target.value || '0'))} style={{ ...editInput, marginLeft: '10px', opacity: v.track_stock ? 1 : 0.3 }} />
+                      <input type="number" disabled={!v.track_stock} value={v.stock_quantity} onChange={(e) => updateVariantField(v.id, 'stock_quantity', parseInt(e.target.value || '0', 10))} style={{ ...editInput, marginLeft: '10px', opacity: v.track_stock ? 1 : 0.3 }} />
                     </td>
                     <td style={tdStyle}><button onClick={() => handleDeleteVariant(v)} style={delBtn}>Delete</button></td>
                   </tr>
@@ -799,25 +855,25 @@ export default function AdminDashboard() {
                 />
                 <label htmlFor="diningMode">Enable Tables & Dining Mode</label>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                <input 
-                  type="checkbox" 
-                  id="kitchenMode" 
-                  checked={kitchenMode} 
-                  onChange={e => setKitchenMode(e.target.checked)} 
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '15px' }}>
+                <input
+                  type="checkbox"
+                  id="kitchenMode"
+                  checked={kitchenMode}
+                  onChange={e => setKitchenMode(e.target.checked)}
                   style={{ width: '20px', height: '20px', marginRight: '10px' }}
                 />
                 <label htmlFor="kitchenMode">Enable Kitchen Display System (KDS)</label>
-              <div style={{ display: 'flex', alignItems: 'center', marginTop: '15px' }}>
-                <input 
-                  type="checkbox" 
-                  id="crmActive" 
-                  checked={crmActive} 
-                  onChange={e => setCrmActive(e.target.checked)} 
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  id="crmActive"
+                  checked={crmActive}
+                  onChange={e => setCrmActive(e.target.checked)}
                   style={{ width: '20px', height: '20px', marginRight: '10px' }}
                 />
-                <label htmlFor="crmActive">Enable CRM & Loyalty Features</label>
-              </div>
+                <label htmlFor="crmActive">Enable CRM &amp; Loyalty Features</label>
               </div>
             </div>
 
@@ -884,11 +940,12 @@ export default function AdminDashboard() {
               </thead>
               <tbody>
                 {filteredOrders.map(sale => (
-                  <tr key={sale.id} style={{ borderBottom: '1px solid #eee', opacity: sale.status === 'VOIDED' ? 0.5 : 1 }}>
+                  <tr key={sale.id} style={{ borderBottom: '1px solid #eee', opacity: (sale.status === 'VOIDED' || sale.status === 'REFUNDED') ? 0.5 : 1 }}>
                     <td style={tdStyle}>
                       <div style={{ fontWeight: 'bold', color: '#1a73e8', fontSize: '0.8rem' }}>#{sale.id.split('-')[0].toUpperCase()}</div>
                       <div style={{ color: '#999', fontSize: '0.75rem' }}>{new Date(sale.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                       {sale.status === 'VOIDED' && <div style={{color:'red', fontSize:'0.7rem', fontWeight:'bold'}}>{t('voided')}</div>}
+                      {sale.status === 'REFUNDED' && <div style={{color:'#1565c0', fontSize:'0.7rem', fontWeight:'bold'}}>{t('refunded')}</div>}
                     </td>
                     <td style={tdStyle}>
                       {sale.order_items?.map((item: any, i: number) => (
@@ -899,13 +956,21 @@ export default function AdminDashboard() {
                     <td style={tdStyle}>
                       <div style={{display:'flex', gap: '8px'}}>
                         <button onClick={() => setSelectedReceiptOrder(sale)} style={btnStyle}>{t('print_receipt')}</button>
-                        {sale.status !== 'VOIDED' && <button onClick={() => handleVoidOrder(sale)} style={{...btnStyle, color: 'red'}}>{t('void_order')}</button>}
+                        {sale.status !== 'VOIDED' && sale.status !== 'REFUNDED' && <button onClick={() => handleVoidOrder(sale)} style={{...btnStyle, color: 'red'}}>{t('void_order')}</button>}
+                        {sale.status !== 'VOIDED' && sale.status !== 'REFUNDED' && <button onClick={() => handleRefundOrder(sale)} style={{...btnStyle, color: '#1565c0'}}>{t('refund')}</button>}
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            {ordersHasMore && (
+              <div style={{ textAlign: 'center', padding: '15px' }}>
+                <button onClick={() => fetchOrders(ordersPage + 1)} style={{ padding: '10px 24px', background: '#000', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+                  Load More
+                </button>
+              </div>
+            )}
           </div>
 
         ) : activeTab === 'staff' ? (
@@ -935,17 +1000,19 @@ export default function AdminDashboard() {
 
       {/* RECEIPT MODAL INTEGRATION */}
       {selectedReceiptOrder && (
-        <ReceiptModal 
+        <ReceiptModal
           orderId={selectedReceiptOrder.id}
-          subtotal={selectedReceiptOrder.total_amount} 
+          subtotal={(selectedReceiptOrder.total_amount || 0) - (selectedReceiptOrder.discount_amount || 0) - (selectedReceiptOrder.tip_amount || 0) - (selectedReceiptOrder.tax_amount || 0)}
           discount={selectedReceiptOrder.discount_amount || 0}
+          tax={selectedReceiptOrder.tax_amount || 0}
           tip={selectedReceiptOrder.tip_amount || 0}
           total={selectedReceiptOrder.total_amount}
-          paymentMethod={selectedReceiptOrder.payment_method || 'Cash'} 
+          paymentMethod={selectedReceiptOrder.payment_method || 'Cash'}
+          createdAt={selectedReceiptOrder.created_at}
           items={selectedReceiptOrder.order_items.map((i: any) => ({
-             name: i.product_name_snapshot,
-             price: i.price_at_sale,
-             quantity: i.quantity
+            name: i.product_name_snapshot,
+            price: i.price_at_sale,
+            quantity: i.quantity
           }))}
           onClose={() => setSelectedReceiptOrder(null)}
         />

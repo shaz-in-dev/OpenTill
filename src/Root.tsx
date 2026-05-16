@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Globe, ShoppingCart, User, X, ShoppingBag, WifiOff, PauseCircle, PlayCircle, Clock, Star, History, StickyNote, PlusCircle } from 'lucide-react';
+import { ShoppingBag, User, PauseCircle, PlayCircle, History, PlusCircle } from 'lucide-react';
 import { useNetworkStatus } from './hooks/useNetworkStatus'
 import { saveOfflineOrder, saveOfflineKitchenTicket } from './utils/offlineDb'
 import { supabase } from './supabaseClient';
@@ -11,7 +11,6 @@ import PaymentModal from './components/PaymentModal';
 import TableSelection from './components/TableSelection'; 
 import StaffClockInModal from './components/StaffClockInModal';
 import OrderHistoryDrawer from './components/OrderHistoryDrawerEntry';
-import { deductIngredients } from './utils/inventory';
 import './App.css';
 
 
@@ -35,6 +34,7 @@ export interface HeldOrder {
   orderType: string;
   orderNote: string;
   heldAt: string;
+  tableNumber?: string;
 }
 
 export type OrderType = 'dine_in' | 'takeaway' | 'delivery';
@@ -61,7 +61,8 @@ export default function Root({ userRole }: RootProps) {
   const [selectedTable, setSelectedTable] = useState<string | null>(null); 
   const [currentBranchId, setCurrentBranchId] = useState<string | null>(null); // NEW: Multi-Tenant Branch ID
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false); // NEW: Responsive Mobile Cart Toggle
-  const [taxRate, setTaxRate] = useState(0); // NEW: Tax Rate for Calculation
+  const [taxRate, setTaxRate] = useState(0);
+  const [currency, setCurrency] = useState('$');
 
   const [showClockIn, setShowClockIn] = useState(false);
 
@@ -104,13 +105,23 @@ export default function Root({ userRole }: RootProps) {
 
   // --- NEW: Multi-Tenant Context Loader ---
   const fetchBranchContext = async () => {
-    // For now, we just grab the first branch available. 
-    // In a real multi-unit setup, this would be a selection screen or stored in localStorage.
-    const { data: branches } = await supabase.from('branches').select('id, name').limit(1);
-    const branch = branches?.[0];
-    if (branch) {
+    const stored = localStorage.getItem('opentill_branch_id');
+    if (stored) {
+      setCurrentBranchId(stored);
+      return;
+    }
+    const { data: branches } = await supabase.from('branches').select('id, name');
+    if (!branches || branches.length === 0) return;
+    if (branches.length === 1) {
+      setCurrentBranchId(branches[0]!.id);
+      localStorage.setItem('opentill_branch_id', branches[0]!.id);
+    } else {
+      const names = branches.map((b, i) => `${i + 1}. ${b.name}`).join('\n');
+      const choice = prompt(`Select branch:\n${names}`);
+      const idx = parseInt(choice || '1', 10) - 1;
+      const branch = (idx >= 0 && idx < branches.length ? branches[idx] : branches[0])!;
       setCurrentBranchId(branch.id);
-      console.log("Active Branch:", branch.name);
+      localStorage.setItem('opentill_branch_id', branch.id);
     }
   };
 
@@ -147,11 +158,14 @@ export default function Root({ userRole }: RootProps) {
   const fetchDiningMode = async () => {
     // 1. Fetch Dining Mode
     const { data: dining } = await supabase.from('settings').select('value').eq('key', 'dining_mode').single(); 
-    if (dining) setDiningModeActive(dining.value);
+    if (dining) setDiningModeActive(dining.value === 'true');
 
     // 2. Fetch Tax Rate (FIX: Phantom Tax Rate Bug)
     const { data: tax } = await supabase.from('settings').select('value').eq('key', 'tax_rate').single();
     if (tax) setTaxRate(Number(tax.value) || 0);
+
+    const { data: curr } = await supabase.from('settings').select('value').eq('key', 'currency').single();
+    if (curr) setCurrency(curr.value || '$');
   };
 
   const loadTableCart = async () => {
@@ -177,12 +191,15 @@ export default function Root({ userRole }: RootProps) {
 
   // --- Feature 13: Daily Sales Widget ---
   const fetchDailySales = async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const localStart = new Date();
+    localStart.setHours(0, 0, 0, 0);
+    const localEnd = new Date();
+    localEnd.setHours(23, 59, 59, 999);
     const { data, count } = await supabase
       .from('orders')
       .select('total_amount', { count: 'exact' })
-      .gte('created_at', `${today}T00:00:00`)
-      .lte('created_at', `${today}T23:59:59`)
+      .gte('created_at', localStart.toISOString())
+      .lte('created_at', localEnd.toISOString())
       .neq('status', 'VOIDED');
     if (data) {
       setDailySalesTotal(data.reduce((sum, o) => sum + (o.total_amount || 0), 0));
@@ -208,6 +225,7 @@ export default function Root({ userRole }: RootProps) {
       orderType,
       orderNote,
       heldAt: new Date().toISOString(),
+      tableNumber: selectedTable || undefined,
     };
     const updated = [...heldOrders, held];
     setHeldOrders(updated);
@@ -227,6 +245,7 @@ export default function Root({ userRole }: RootProps) {
     setDiscountPercentage(order.discountPercentage);
     setOrderType(order.orderType as OrderType);
     setOrderNote(order.orderNote);
+    if (order.tableNumber) setSelectedTable(order.tableNumber);
     const updated = heldOrders.filter(o => o.id !== id);
     setHeldOrders(updated);
     localStorage.setItem('opentill_held_orders', JSON.stringify(updated));
@@ -309,13 +328,16 @@ export default function Root({ userRole }: RootProps) {
       // 1. Get quantity in CURRENT cart
       const currentQty = cart.filter(i => i.id === variant.id).reduce((sum, i) => sum + i.quantity, 0);
       
-      // 2. NEW: Get quantity in OTHER active tables (prevent Overbooking)
-      // FIX: Ensure we only check THIS branch
-      const { data: globalDrafts } = await supabase
+      // 2. Get quantity in OTHER active tables (exclude current table to avoid double-count)
+      let globalQuery = supabase
         .from('table_cart_items')
         .select('quantity')
         .eq('variant_id', variant.id)
-        .eq('branch_id', currentBranchId); // Filter by Branch!
+        .eq('branch_id', currentBranchId);
+      if (diningModeActive && selectedTable) {
+        globalQuery = globalQuery.neq('table_number', selectedTable);
+      }
+      const { data: globalDrafts } = await globalQuery;
       
       const globalQty = globalDrafts ? globalDrafts.reduce((acc, row) => acc + row.quantity, 0) : 0;
       
@@ -326,7 +348,7 @@ export default function Root({ userRole }: RootProps) {
 
     const modifiers = variant.modifiers || [];
     const modifierText = modifiers.map((m:any) => `+ ${m.name}`).join(', ');
-    const fullName = modifiers.length > 0 ? `${variant.name} \n(${modifierText})` : variant.name;
+    const fullName = modifiers.length > 0 ? `${variant.name} | ${modifierText}` : variant.name;
 
     if (diningModeActive && selectedTable) {
       // PERSISTENT DB LOGIC: Check if item exists for this table and is still in DRAFT status
@@ -579,6 +601,10 @@ export default function Root({ userRole }: RootProps) {
         totalAmount: totalAmount,
         paymentMethod: method,
         customerId: customerId,
+        orderType: orderType,
+        orderNote: orderNote,
+        userId: (await supabase.auth.getSession()).data.session?.user?.id,
+        skipKds: false,
         items: cart.map((item) => ({
           id: item.id,
           name: item.name,
@@ -616,24 +642,6 @@ export default function Root({ userRole }: RootProps) {
       return;
     }
 
-    // --- GIFT CARD LOGIC START ---
-    let giftCardCode = "";
-    if (method.startsWith('GIFT_CARD:')) {
-        giftCardCode = method.split(':')[1] || '';
-        // 1. Process Payment First (Secure Funds)
-        const { error: gcError } = await supabase.rpc('process_gift_card_payment', {
-            card_code_input: giftCardCode,
-            amount_input: totalAmount / 100, // Convert cents to dollars/unit
-            order_id_input: 'PENDING'
-        });
-
-        if (gcError) {
-            alert("Gift Card Payment Failed: " + gcError.message);
-            return;
-        }
-    }
-    // --- GIFT CARD LOGIC END ---
-
     // Generate User Context
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -658,9 +666,22 @@ export default function Root({ userRole }: RootProps) {
     const { data, error } = await supabase.rpc('sell_items', { order_payload: payload });
 
     if (error) {
-      alert("Transaction Failed!");
-      // TODO: Logic to refund Gift Card if order creation fails
+      alert("Transaction Failed: " + error.message);
     } else {
+      // --- GIFT CARD LOGIC: deduct AFTER order is confirmed ---
+      if (method.startsWith('GIFT_CARD:')) {
+        const giftCardCode = method.split(':')[1] || '';
+        const { error: gcError } = await supabase.rpc('process_gift_card_payment', {
+          card_code_input: giftCardCode,
+          amount_input: totalAmount / 100,
+          order_id_input: data.order_id
+        });
+        if (gcError) {
+          // Order created but gift card deduction failed — flag for staff
+          console.error('Gift card deduction failed for order', data.order_id, gcError);
+          alert(`Order placed but gift card deduction failed. Please process manually. Order ID: ${data.order_id.slice(0, 8)}`);
+        }
+      }
       // HANDLE LOYALTY update
       if (customerId && data?.order_id) {
          // Link order to customer
@@ -694,14 +715,16 @@ export default function Root({ userRole }: RootProps) {
 
       setLastOrder({
         id: data.order_id,
-        subtotal: subtotal,
+        subtotal: subtotal - discountAmount,
         discount: discountAmount,
+        tax: Math.round(totalTax),
         tip: tipAmount,
         total: totalAmount,
         items: [...cart],
         method: method,
         orderType: orderType,
         orderNote: orderNote,
+        createdAt: new Date().toISOString(),
       });
 
       setCart([]);
@@ -737,8 +760,11 @@ export default function Root({ userRole }: RootProps) {
           <h1 style={{ margin: 0, fontSize: '1.2rem' }}>OpenTill POS</h1>
           
           <div style={{ display: 'flex', gap: '5px', background: '#333', padding: '4px', borderRadius: '6px', marginLeft: '20px' }}>
-            <button 
-              onClick={() => setDiningModeActive(false)}
+            <button
+              onClick={async () => {
+                setDiningModeActive(false);
+                await supabase.from('settings').upsert({ key: 'dining_mode', value: 'false' }, { onConflict: 'key' });
+              }}
               style={{
                 background: !diningModeActive ? '#4caf50' : 'transparent',
                 color: !diningModeActive ? 'white' : '#aaa',
@@ -752,8 +778,11 @@ export default function Root({ userRole }: RootProps) {
             >
               🚀 {t('quick_service')}
             </button>
-            <button 
-              onClick={() => setDiningModeActive(true)}
+            <button
+              onClick={async () => {
+                setDiningModeActive(true);
+                await supabase.from('settings').upsert({ key: 'dining_mode', value: 'true' }, { onConflict: 'key' });
+              }}
               style={{
                 background: diningModeActive ? '#ff9800' : 'transparent',
                 color: diningModeActive ? 'white' : '#aaa',
@@ -774,7 +803,7 @@ export default function Root({ userRole }: RootProps) {
             {/* Feature 13: Daily Sales Widget */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(46,125,50,0.3)', padding: '4px 12px', borderRadius: '6px', fontSize: '0.8rem' }}>
               <span style={{ color: '#81c784' }}>{dailyOrderCount} orders</span>
-              <span style={{ color: '#a5d6a7', fontWeight: 'bold' }}>${(dailySalesTotal / 100).toFixed(2)}</span>
+              <span style={{ color: '#a5d6a7', fontWeight: 'bold' }}>{currency}{(dailySalesTotal / 100).toFixed(2)}</span>
             </div>
 
             {/* Feature 2: Hold/Park Order */}
@@ -824,13 +853,16 @@ export default function Root({ userRole }: RootProps) {
             </button>
 
            {/* Language Switcher */}
-           <button 
-            onClick={() => i18n.changeLanguage(i18n.language === 'en' ? 'es' : 'en')}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'transparent', border: '1px solid #555', padding: '6px 12px', color: 'white', borderRadius: '6px', cursor: 'pointer' }}
+           <select
+            value={i18n.language}
+            onChange={e => i18n.changeLanguage(e.target.value)}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'transparent', border: '1px solid #555', padding: '6px 12px', color: 'white', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}
           >
-            <Globe size={16} />
-            {i18n.language.toUpperCase()}
-          </button>
+            <option value="en">EN</option>
+            <option value="es">ES</option>
+            <option value="fr">FR</option>
+            <option value="de">DE</option>
+          </select>
         </div>
       </header>
 
@@ -949,16 +981,23 @@ export default function Root({ userRole }: RootProps) {
             orderNote={orderNote}
             onSetOrderNote={setOrderNote}
             orderType={orderType}
+            currency={currency}
           />
         </div>
       </div>
 
       {showPayment && (
         <PaymentModal
-          subtotal={
+          subtotal={Math.round(
             cart.reduce((sum, item) => sum + item.price * item.quantity, 0) *
-            (1 - discountPercentage / 100)
-          }
+            (1 - discountPercentage / 100) *
+            (1 + taxRate / 100)
+          )}
+          taxAmount={Math.round(
+            cart.reduce((sum, item) => sum + item.price * item.quantity, 0) *
+            (1 - discountPercentage / 100) *
+            (taxRate / 100)
+          )}
           onCreatePendingOrder={handleCreatePendingOrder}
           onConfirm={handleConfirmPayment}
           onCancel={() => setShowPayment(false)}
@@ -970,12 +1009,14 @@ export default function Root({ userRole }: RootProps) {
           orderId={lastOrder.id}
           subtotal={lastOrder.subtotal}
           discount={lastOrder.discount}
+          tax={lastOrder.tax}
           tip={lastOrder.tip}
           total={lastOrder.total}
           paymentMethod={lastOrder.method}
           items={lastOrder.items}
           orderNote={lastOrder.orderNote}
           orderType={lastOrder.orderType}
+          createdAt={lastOrder.createdAt}
           onClose={() => {
             setShowReceipt(false);
             // Trigger refresh to update stock counts in ProductGrid

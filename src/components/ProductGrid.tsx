@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
-import { useTranslation } from 'react-i18next'; // NEW: i18n support
+import { useTranslation } from 'react-i18next';
+import { Star } from 'lucide-react';
 import ModifierSelectionModal from './ModifierSelectionModal';
 
 interface Variant {
@@ -35,6 +36,20 @@ export default function ProductGrid({ onAddToCart, branchId }: Props) {
   // --- MODIFIERS ---
   const [selectedProductForMods, setSelectedProductForMods] = useState<any | null>(null);
   const [selectedVariantForMods, setSelectedVariantForMods] = useState<any | null>(null);
+
+  // Feature 14: Product Favorites
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('opentill_favorites') || '[]'); } catch { return []; }
+  });
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+
+  const toggleFavorite = (productId: string) => {
+    const updated = favorites.includes(productId)
+      ? favorites.filter(id => id !== productId)
+      : [...favorites, productId];
+    setFavorites(updated);
+    localStorage.setItem('opentill_favorites', JSON.stringify(updated));
+  };
 
   // --- CATEGORY COLOR MAPPING ---
   const getCategoryColor = (category: string) => {
@@ -83,6 +98,7 @@ export default function ProductGrid({ onAddToCart, branchId }: Props) {
 
   useEffect(() => {
     if (branchId) fetchProducts()
+    else setLoading(false)
   }, [branchId])
 
   const handleProductClick = (product: any, variant: any) => {
@@ -126,13 +142,17 @@ export default function ProductGrid({ onAddToCart, branchId }: Props) {
   // Generate category list from data
   const categories = ["All", ...Array.from(new Set(products.map(p => p.category || "Uncategorized")))]
 
-  // Filter products based on search and category
+  // Filter products based on search, category, and favorites
   const filteredProducts = products.filter(p => {
     const matchesCategory = selectedCategory === "All" || p.category === selectedCategory
-    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase())
-    return matchesCategory && matchesSearch
+    const query = searchQuery.toLowerCase();
+    const matchesSearch = p.name.toLowerCase().includes(query) ||
+      p.variants?.some((v: Variant) => v.name.toLowerCase().includes(query))
+    const matchesFavorites = !showFavoritesOnly || favorites.includes(p.id)
+    return matchesCategory && matchesSearch && matchesFavorites
   })
 
+  if (!branchId) return <div style={{ padding: '20px', textAlign: 'center', color: '#d32f2f' }}>No branch configured. Please contact your administrator.</div>
   if (loading) return <div style={{ padding: '20px', textAlign: 'center' }}>{t('loading_product')}</div>
 
   return (
@@ -152,7 +172,20 @@ export default function ProductGrid({ onAddToCart, branchId }: Props) {
           }}
         />
 
-        <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '10px', alignItems: 'center' }}>
+          {/* Feature 14: Favorites toggle */}
+          <button
+            onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+            className={`category-filter-btn ${showFavoritesOnly ? 'active' : ''}`}
+            style={{
+              background: showFavoritesOnly ? '#ff9800' : undefined,
+              borderColor: showFavoritesOnly ? '#ff9800' : undefined,
+              color: showFavoritesOnly ? '#fff' : undefined,
+              display: 'flex', alignItems: 'center', gap: '4px'
+            }}
+          >
+            <Star size={14} fill={showFavoritesOnly ? '#fff' : 'none'} /> {t('favorites')}
+          </button>
           {categories.map(cat => (
             <button
               key={cat}
@@ -183,7 +216,15 @@ export default function ProductGrid({ onAddToCart, branchId }: Props) {
               <div style={{ height: '6px', width: '100%', backgroundColor: getCategoryColor(product.category) }}></div>
 
               <div className="product-card-content">
-                <h3>{product.name}</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <h3>{product.name}</h3>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleFavorite(product.id); }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', flexShrink: 0 }}
+                  >
+                    <Star size={16} fill={favorites.includes(product.id) ? '#ff9800' : 'none'} color={favorites.includes(product.id) ? '#ff9800' : '#ccc'} />
+                  </button>
+                </div>
 
                 <div 
                   className="product-category"

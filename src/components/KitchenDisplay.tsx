@@ -35,7 +35,7 @@ export default function KitchenDisplay() {
     if (!branchId) return;
 
     const channel = supabase
-      .channel('kitchen_orders_live')
+      .channel(`kitchen_orders_live_${branchId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'kitchen_tickets', filter: `branch_id=eq.${branchId}` },
@@ -62,76 +62,80 @@ export default function KitchenDisplay() {
   };
 
   const fetchActiveTickets = async (bId: string) => {
-    // 1. Fetch Remote Tickets filtered by Branch
     const { data: remoteData, error } = await supabase
       .from('kitchen_tickets')
       .select('*')
-      .eq('branch_id', bId) // SECURE: Filter by Branch
-      .in('status', ['PENDING', 'VOIDED']) 
+      .eq('branch_id', bId)
+      .in('status', ['PENDING', 'VOIDED'])
       .order('created_at', { ascending: true });
 
-    // 2. Fetch Local Offline Tickets
     const localData = await db.kitchenTickets
-        .where('status')
-        .notEqual('COMPLETED')
-        .toArray();
+      .where('status')
+      .notEqual('COMPLETED')
+      .toArray();
 
-    // 3. Merge and Sort
     const allTickets = [
-        ...(remoteData || []),
-        ...(localData || []).map(t => ({...t, is_offline: true, items: t.items || []}))
+      ...(remoteData || []),
+      ...(localData || []).map(t => ({ ...t, is_offline: true, items: t.items || [] }))
     ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
     if (!error) {
-       // Only play sound if new tickets arrived (simple check)
-       // logic skipped for brevity, keeping existing if it works
+      // Play sound if new tickets have arrived since last fetch
+      const prevCount = tickets.length;
+      const newCount = allTickets.length;
+      if (newCount > prevCount && prevCount > 0) {
+        playNotificationSound();
+      }
       setTickets(allTickets as KitchenTicket[]);
+    } else {
+      console.error('KDS fetch error:', error);
     }
     setLoading(false);
   };
 
-  // --- NEW: Handle Partial Completion (Tap Item) ---
   const toggleItemStatus = async (ticket: KitchenTicket, itemIndex: number) => {
-    // If no branch, can't update remote safely
-    if (!branchId && !ticket.is_offline) return; 
+    if (!branchId && !ticket.is_offline) return;
 
-    const newItems = [...ticket.items];
-    if (!newItems[itemIndex]) return; 
-
-    const currentStatus = newItems[itemIndex].status;
-    
-    // Toggle between PENDING and READY
-    newItems[itemIndex].status = currentStatus === 'READY' ? 'PENDING' : 'READY';
+    const newItems = ticket.items.map((item, idx) =>
+      idx === itemIndex
+        ? { ...item, status: (item.status === 'READY' ? 'PENDING' : 'READY') as 'PENDING' | 'READY' }
+        : item
+    );
 
     if (ticket.is_offline) {
-        await db.kitchenTickets.update(ticket.id, { items: newItems });
+      await db.kitchenTickets.update(ticket.id, { items: newItems });
     } else {
-        const { error } = await supabase
+      const { error } = await supabase
         .from('kitchen_tickets')
         .update({ items: newItems })
         .eq('id', ticket.id);
+      if (error) {
+        console.error('Failed to update item status:', error);
+        return;
+      }
     }
-    
+
     if (branchId) fetchActiveTickets(branchId);
   };
 
   const playNotificationSound = () => {
-    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-    audio.play().catch(() => console.log("Audio play blocked by browser. Click screen once."));
+    const audio = new Audio('/notification.mp3');
+    audio.play().catch(() => {});
   };
 
   const handleComplete = async (id: number, isOffline = false) => {
     if (isOffline) {
-        await db.kitchenTickets.update(id, { status: 'COMPLETED' });
+      await db.kitchenTickets.update(id, { status: 'COMPLETED' });
     } else {
-        // Marking as COMPLETED removes it from this view
-        const { error } = await supabase
+      const { error } = await supabase
         .from('kitchen_tickets')
         .update({ status: 'COMPLETED' })
         .eq('id', id);
+      if (error) {
+        console.error('Failed to complete ticket:', error);
+        return;
+      }
     }
-    
-    // Refresh with branch context
     if (branchId) fetchActiveTickets(branchId);
   };
 

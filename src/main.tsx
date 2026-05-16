@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, Component, type ErrorInfo, type ReactNode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { supabase } from './supabaseClient'
 import Root from './Root'
@@ -13,6 +13,29 @@ import { setupSyncListener } from './utils/syncManager';
 import './App.css'
 
 setupSyncListener();
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) { console.error('App error:', error, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: '50px', textAlign: 'center', fontFamily: 'sans-serif' }}>
+          <h2>Something went wrong</h2>
+          <p style={{ color: '#d32f2f' }}>{this.state.error.message}</p>
+          <button onClick={() => window.location.reload()} style={{ marginTop: '20px', padding: '10px 24px', background: '#000', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+            Reload App
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function App() {
   const [session, setSession] = useState<any>(null)
@@ -65,16 +88,15 @@ function App() {
     return <CustomerMenu />
   }
 
-  if (!session) return <Login />
-
-  // KITCHEN PAGE ROUTE
   if (path === '/kitchen') {
     return <KitchenDisplay />
   }
 
+  if (!session) return <Login />
+
   // ADMIN PAGE ACCESS CONTROL
   if (path === '/admin') {
-    if (userRole !== 'manager') {
+    if (userRole !== 'manager' && userRole !== 'admin') {
       return (
         <div style={{ padding: '50px', textAlign: 'center' }}>
           <h1>⛔ Access Denied</h1>
@@ -123,7 +145,7 @@ function App() {
           </div>
           
           <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-            {userRole === 'manager' && (
+            {(userRole === 'manager' || userRole === 'admin') && (
                <a href="/admin" style={{ 
                  color: 'white', 
                  textDecoration: 'none', 
@@ -179,8 +201,10 @@ function App() {
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <ThemeProvider>
-      <App />
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <App />
+      </ThemeProvider>
+    </ErrorBoundary>
   </React.StrictMode>,
 )

@@ -15,12 +15,10 @@
     "dexie": "^4.3.0",
     "i18next": "^25.8.13",
     "lucide-react": "^0.576.0",
-    "markdown-pdf": "^11.0.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-i18next": "^16.5.4",
     "react-is": "^18.3.1",
-    "react-router-dom": "^6.26.0",
     "recharts": "^3.7.0",
     "vite-plugin-pwa": "^1.2.0",
     "workbox-window": "^7.4.0"

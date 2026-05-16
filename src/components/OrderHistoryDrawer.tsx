@@ -18,11 +18,17 @@ export default function OrderHistoryDrawer({ onClose, branchId }: Props) {
   }, []);
 
   const fetchRecentOrders = async () => {
-    const { data } = await supabase
+    let query = supabase
       .from('orders')
       .select('id, total_amount, payment_method, status, created_at, order_items(quantity, product_name_snapshot)')
       .order('created_at', { ascending: false })
       .limit(20);
+
+    if (branchId) {
+      query = query.eq('branch_id', branchId);
+    }
+
+    const { data } = await query;
     setOrders(data || []);
     setLoading(false);
   };

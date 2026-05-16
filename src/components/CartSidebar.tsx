@@ -1,29 +1,44 @@
-import type { CartItem } from '../Root'
-import type { TFunction } from 'i18next'; // Type for translation function
+import { useState } from 'react'
+import type { CartItem, OrderType } from '../Root'
+import type { TFunction } from 'i18next';
+import { StickyNote, Plus, Minus } from 'lucide-react';
 
 interface Props {
   cartItems: CartItem[]
   onCheckout: () => void
   onRemoveFromCart: (id: string, name?: string) => void
+  onIncrementItem: (id: string, name?: string) => void
+  onUpdateItemNote: (id: string, name: string, note: string) => void
   discountPercentage: number
   onSetDiscount: (val: number) => void
-  onSendToKitchen: () => void // New prop for kitchen routing
-  isDiningMode: boolean; // NEW: To toggle Kitchen UI
-  t: TFunction; // NEW: i18n
-  taxRate?: number; // FIX: Tax Rate Injection
+  onSendToKitchen: () => void
+  isDiningMode: boolean;
+  t: TFunction;
+  taxRate?: number;
+  orderNote: string;
+  onSetOrderNote: (note: string) => void;
+  orderType: OrderType;
+  currency?: string;
 }
 
 export default function CartSidebar({ 
   cartItems, 
   onCheckout, 
   onRemoveFromCart, 
+  onIncrementItem,
+  onUpdateItemNote,
   discountPercentage, 
   onSetDiscount,
   onSendToKitchen,
   isDiningMode,
   t,
-  taxRate = 0 // Default to 0 if not provided
+  taxRate = 0,
+  orderNote,
+  onSetOrderNote,
+  orderType,
+  currency = '$',
 }: Props) {
+  const [editingNoteFor, setEditingNoteFor] = useState<string | null>(null);
   
   // Calculate Math
   const subtotalRaw = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
@@ -55,46 +70,77 @@ export default function CartSidebar({
             <div 
               key={`${item.id}-${item.name}`} 
               style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center', 
                 marginBottom: '12px', 
                 paddingBottom: '12px', 
                 borderBottom: '1px solid #f0f0f0',
-                opacity: (item as any).status === 'SENT' ? 0.7 : 1 // Visual feedback for sent items
+                opacity: (item as any).status === 'SENT' ? 0.7 : 1
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <button 
-                  onClick={() => onRemoveFromCart(item.id, item.name)}
-                  style={{ 
-                    background: '#eda8b2', 
-                    color: '#fb1919', 
-                    border: 'none', 
-                    borderRadius: '6px', 
-                    width: '28px', 
-                    height: '28px', 
-                    cursor: 'pointer', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    fontWeight: 'bold',
-                    fontSize: '16px'
-                  }}
-                >
-                  -
-                </button>
-                <div>
-                  <div style={{ fontWeight: 'bold' }}>
-                    {item.name} 
-                    {(item as any).status === 'SENT' && <span style={{ marginLeft: '8px', color: '#2e7d32', fontSize: '0.7rem' }}>✓ Sent</span>}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {/* Quantity Controls */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <button 
+                      onClick={() => onIncrementItem(item.id, item.name)}
+                      disabled={(item as any).status === 'SENT'}
+                      style={{ 
+                        background: '#e8f5e9', color: '#2e7d32', border: 'none', borderRadius: '4px', 
+                        width: '24px', height: '24px', cursor: 'pointer', display: 'flex', 
+                        alignItems: 'center', justifyContent: 'center', fontSize: '14px'
+                      }}
+                    >
+                      <Plus size={12} />
+                    </button>
+                    <button 
+                      onClick={() => onRemoveFromCart(item.id, item.name)}
+                      style={{ 
+                        background: '#ffebee', color: '#d32f2f', border: 'none', borderRadius: '4px', 
+                        width: '24px', height: '24px', cursor: 'pointer', display: 'flex', 
+                        alignItems: 'center', justifyContent: 'center', fontSize: '14px'
+                      }}
+                    >
+                      <Minus size={12} />
+                    </button>
                   </div>
-                  <div style={{ fontSize: '0.85rem', color: '#888' }}>x{item.quantity}</div>
+                  <div>
+                    <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>
+                      {item.name} 
+                      {(item as any).status === 'SENT' && <span style={{ marginLeft: '8px', color: '#2e7d32', fontSize: '0.7rem' }}>✓ Sent</span>}
+                    </div>
+                    <div style={{ fontSize: '0.85rem', color: '#888' }}>x{item.quantity}</div>
+                    {item.note && (
+                      <div style={{ fontSize: '0.75rem', color: '#ff9800', fontStyle: 'italic', marginTop: '2px' }}>
+                        📝 {item.note}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                  <div style={{ fontWeight: '600' }}>
+                    {currency}{((item.price * item.quantity) / 100).toFixed(2)}
+                  </div>
+                  <button
+                    onClick={() => setEditingNoteFor(editingNoteFor === `${item.id}-${item.name}` ? null : `${item.id}-${item.name}`)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: item.note ? '#ff9800' : '#ccc', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '2px' }}
+                  >
+                    <StickyNote size={12} /> {t('note')}
+                  </button>
                 </div>
               </div>
-              <div style={{ fontWeight: '600' }}>
-                ${((item.price * item.quantity) / 100).toFixed(2)}
-              </div>
+              {/* Inline Note Editor */}
+              {editingNoteFor === `${item.id}-${item.name}` && (
+                <div style={{ marginTop: '6px', marginLeft: '36px' }}>
+                  <input
+                    type="text"
+                    placeholder={t('add_note_placeholder')}
+                    value={item.note || ''}
+                    onChange={e => onUpdateItemNote(item.id, item.name, e.target.value)}
+                    style={{ width: '100%', padding: '6px 8px', border: '1px solid #ffe082', borderRadius: '4px', fontSize: '0.8rem', background: '#fffde7', boxSizing: 'border-box' }}
+                    autoFocus
+                    onKeyDown={e => { if (e.key === 'Enter') setEditingNoteFor(null); }}
+                  />
+                </div>
+              )}
             </div>
           ))
         )}
@@ -102,8 +148,26 @@ export default function CartSidebar({
 
       {/* --- BOTTOM SECTION (Fixed at bottom) --- */}
       <div className="order-summary-footer">
+
+        {/* Order Type Badge */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
+          <span style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', background: orderType === 'dine_in' ? '#e3f2fd' : orderType === 'takeaway' ? '#fff3e0' : '#fce4ec', color: orderType === 'dine_in' ? '#1565c0' : orderType === 'takeaway' ? '#e65100' : '#c2185b' }}>
+            {orderType === 'dine_in' ? '🍽️' : orderType === 'takeaway' ? '🥡' : '🚚'} {t(orderType)}
+          </span>
+        </div>
         
-        {/* NEW: Kitchen Action Button - Only in Dining Mode */}
+        {/* Order Note */}
+        <div style={{ marginBottom: '12px' }}>
+          <input
+            type="text"
+            placeholder={t('order_note_placeholder')}
+            value={orderNote}
+            onChange={e => onSetOrderNote(e.target.value)}
+            style={{ width: '100%', padding: '8px 10px', border: '1px solid #e0e0e0', borderRadius: '6px', fontSize: '0.85rem', boxSizing: 'border-box', background: orderNote ? '#fffde7' : '#fafafa' }}
+          />
+        </div>
+        
+        {/* Kitchen Action Button - Only in Dining Mode */}
         {isDiningMode && cartItems.length > 0 && (
           <button 
             onClick={onSendToKitchen}
@@ -153,7 +217,7 @@ export default function CartSidebar({
                   transition: '0.2s'
                 }}
               >
-                {pct === 0 ? 'None' : `${pct}%`}
+                {pct === 0 ? t('none') : `${pct}%`}
               </button>
             ))}
           </div>
@@ -163,12 +227,12 @@ export default function CartSidebar({
         <div style={{ marginBottom: '20px', fontSize: '0.95rem', color: '#666' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
             <span>{t('subtotal')}</span>
-            <span>${(subtotalRaw / 100).toFixed(2)}</span>
+            <span>{currency}{(subtotalRaw / 100).toFixed(2)}</span>
           </div>
           {discountPercentage > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#e53935', marginBottom: '6px' }}>
               <span>{t('discount')} ({discountPercentage}%)</span>
-              <span>-${(discountAmount / 100).toFixed(2)}</span>
+              <span>-{currency}{(discountAmount / 100).toFixed(2)}</span>
             </div>
           )}
           
@@ -176,7 +240,7 @@ export default function CartSidebar({
           {taxRate > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '0.9em' }}>
               <span>{t('tax') || 'Tax'} ({taxRate}%)</span>
-              <span>${(taxAmount / 100).toFixed(2)}</span>
+              <span>{currency}{(taxAmount / 100).toFixed(2)}</span>
             </div>
           )}
         </div>
@@ -201,7 +265,7 @@ export default function CartSidebar({
               {t('total')}
             </div>
             <div style={{ fontSize: '2.2rem', fontWeight: '800', lineHeight: '1' }}>
-              ${(finalTotal / 100).toFixed(2)}
+              {currency}{(finalTotal / 100).toFixed(2)}
             </div>
           </div>
 

@@ -4,13 +4,14 @@ import { supabase } from '../supabaseClient'; // Adjusted import path assuming t
 // If supabaseClient is in src/, need ../supabaseClient
 
 interface Props {
-  subtotal: number // The bill amount (after discount)
+  subtotal: number // Post-discount, post-tax total in cents
+  taxAmount?: number // Tax portion in cents, for display
   onCreatePendingOrder?: () => Promise<string | null> // New Prop
   onConfirm: (method: string, tipAmount: number, customerId?: string) => void
   onCancel: () => void
 }
 
-export default function PaymentModal({ subtotal, onCreatePendingOrder, onConfirm, onCancel }: Props) {
+export default function PaymentModal({ subtotal, taxAmount = 0, onCreatePendingOrder, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   const [tip, setTip] = useState(0)
   const [isSplitMode, setIsSplitMode] = useState(false);
@@ -29,6 +30,11 @@ export default function PaymentModal({ subtotal, onCreatePendingOrder, onConfirm
   const [giftCardCode, setGiftCardCode] = useState('');
   const [gcBalance, setGcBalance] = useState<number | null>(null);
   const [gcError, setGcError] = useState('');
+
+  // Feature 4: Cash Tendered & Change
+  const [showCashTendered, setShowCashTendered] = useState(false);
+  const [cashTendered, setCashTendered] = useState('');
+  const cashTenderedNum = parseFloat(cashTendered) || 0;
 
   useEffect(() => {
     checkCrmStatus()
@@ -62,6 +68,7 @@ export default function PaymentModal({ subtotal, onCreatePendingOrder, onConfirm
   }
 
   const finalTotal = subtotal + tip
+  const changeAmount = cashTenderedNum - (finalTotal / 100);
 
   const checkGiftCardBalance = async () => {
     setGcError('');
@@ -255,8 +262,14 @@ export default function PaymentModal({ subtotal, onCreatePendingOrder, onConfirm
         <div style={{ marginBottom: '30px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.1rem', color: 'var(--text-secondary)' }}>
             <span>{t('bill_amount')}:</span>
-            <span>${(subtotal / 100).toFixed(2)}</span>
+            <span>${((subtotal - taxAmount) / 100).toFixed(2)}</span>
           </div>
+          {taxAmount > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.1rem', color: 'var(--text-secondary)' }}>
+              <span>{t('tax')}:</span>
+              <span>${(taxAmount / 100).toFixed(2)}</span>
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.1rem', color: 'var(--success-color)', fontWeight: 'bold' }}>
             <span>+ {t('tip')}:</span>
             <span>${(tip / 100).toFixed(2)}</span>
@@ -283,7 +296,7 @@ export default function PaymentModal({ subtotal, onCreatePendingOrder, onConfirm
              
              {/* List Previous Payments */}
              {splitPayments.map((p, idx) => (
-               <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #ffejoy' }}>
+               <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #ffe0b2' }}>
                  <span>{p.method}</span>
                  <span>${(p.amount / 100).toFixed(2)}</span>
                </div>
@@ -312,22 +325,82 @@ export default function PaymentModal({ subtotal, onCreatePendingOrder, onConfirm
                Back to Standard Payment
              </button>
           </div>
+        ) : showCashTendered ? (
+          /* Feature 4: Cash Tendered & Change Calculator */
+          <div style={{ marginBottom: '20px', textAlign: 'left' }}>
+            <div style={{ background: '#e8f5e9', padding: '15px', borderRadius: '8px', border: '1px solid #a5d6a7', marginBottom: '10px' }}>
+              <p style={{ margin: '0 0 10px 0', fontWeight: 'bold', color: '#2e7d32' }}>💵 {t('cash_tendered')}</p>
+              
+              {/* Feature 6: Quick Cash Denomination Buttons */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '10px' }}>
+                {[5, 10, 20, 50, 100, Math.ceil(finalTotal / 100)].map(amt => (
+                  <button
+                    key={amt}
+                    onClick={() => setCashTendered(String(amt))}
+                    style={{ padding: '10px', border: '1px solid #c8e6c9', borderRadius: '6px', background: cashTendered === String(amt) ? '#2e7d32' : '#fff', color: cashTendered === String(amt) ? '#fff' : '#333', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem' }}
+                  >
+                    ${amt}
+                  </button>
+                ))}
+              </div>
+              
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <span style={{ fontSize: '1.2rem' }}>$</span>
+                <input 
+                  type="number" 
+                  value={cashTendered} 
+                  onChange={e => setCashTendered(e.target.value)}
+                  style={{ flex: 1, padding: '12px', fontSize: '1.5rem', textAlign: 'center', border: '2px solid #a5d6a7', borderRadius: '6px' }}
+                  placeholder="0.00"
+                  autoFocus
+                />
+              </div>
+              
+              {cashTenderedNum > 0 && (
+                <div style={{ marginTop: '12px', padding: '10px', borderRadius: '6px', background: changeAmount >= 0 ? '#c8e6c9' : '#ffcdd2', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.85rem', color: '#555' }}>{t('change_due')}</div>
+                  <div style={{ fontSize: '2rem', fontWeight: '900', color: changeAmount >= 0 ? '#1b5e20' : '#c62828' }}>
+                    ${changeAmount >= 0 ? changeAmount.toFixed(2) : 'Insufficient'}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <button 
+              onClick={() => { if (changeAmount >= 0) onConfirm('CASH', tip, selectedCustomer?.id); }}
+              disabled={changeAmount < 0}
+              style={{ ...payBtnStyle('#2e7d32'), width: '100%', opacity: changeAmount < 0 ? 0.5 : 1 }}
+            >
+              💵 {t('confirm_cash')} (${(finalTotal / 100).toFixed(2)})
+            </button>
+            <button onClick={() => setShowCashTendered(false)} style={{ marginTop: '8px', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', color: '#666', width: '100%' }}>
+              ← {t('back')}
+            </button>
+          </div>
         ) : (
           <>
             {/* --- CONFIRM BUTTONS --- */}
             <div style={{ display: 'flex', gap: '20px', marginBottom: '20px' }}>
-              <button onClick={() => onConfirm('CASH', tip)} style={payBtnStyle('var(--success-color, #2e7d32)')}>💵 {t('cash')}</button>
-              <button onClick={() => onConfirm('CARD', tip)} style={payBtnStyle('var(--primary-color, #1565c0)')}>💳 {t('card')}</button>
+              <button onClick={() => setShowCashTendered(true)} style={payBtnStyle('var(--success-color, #2e7d32)')}>💵 {t('cash')}</button>
+              <button onClick={() => onConfirm('CARD', tip, selectedCustomer?.id)} style={payBtnStyle('var(--primary-color, #1565c0)')}>💳 {t('card')}</button>
             </div>
+            
+            {/* Feature 16: Customer Tab */}
+            <button 
+               onClick={() => {
+                 if (!selectedCustomer) return alert(t('select_customer_first'));
+                 onConfirm('TAB', tip, selectedCustomer?.id);
+               }}
+               style={{ width: '100%', padding: '10px', marginBottom: '10px', background: '#7b1fa2', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+               📋 {t('add_to_tab')}
+            </button>
             
             <button 
                onClick={() => setIsSplitMode(true)} 
-               style={{ 
-                 width: '100%', padding: '10px', marginBottom: '10px', 
-                 background: '#ff9800', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' 
-               }}
+               style={{ width: '100%', padding: '10px', marginBottom: '10px', background: '#ff9800', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
             >
-               ➗ Split Bill / Partial Payment
+               ➗ {t('split_bill')}
             </button>
           </>
         )}
@@ -347,7 +420,7 @@ const btnStyle = (isActive: boolean) => ({
   border: '1px solid var(--border-color)', borderRadius: '4px', fontWeight: 'bold' as const
 })
 
-const payBtnStyle = (color: string) => ({
-  flex: 1, padding: '15px', fontSize: '1.2rem', fontWeight: 'bold' as const,
+const payBtnStyle = (color: string): React.CSSProperties => ({
+  flex: 1, padding: '15px', fontSize: '1.2rem', fontWeight: 'bold',
   background: color, color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer'
 })
